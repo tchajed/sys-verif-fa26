@@ -12,17 +12,17 @@
     "fmt": "prettier --write . --log-level error"
   },
   "devDependencies": {
-    "@types/katex": "^0.16.7",
+    "@types/katex": "^0.16.8",
     "@vuepress/bundler-vite": "2.0.0-rc.24",
     "@vuepress/plugin-google-analytics": "2.0.0-rc.112",
     "@vuepress/plugin-search": "2.0.0-rc.112",
     "@vuepress/plugin-shiki": "2.0.0-rc.112",
-    "katex": "^0.16.25",
+    "katex": "^0.16.38",
     "mathjax-full": "^3.2.2",
-    "mermaid": "^11.12.1",
-    "prettier": "^3.6.2",
-    "sass-embedded": "^1.93.3",
-    "vue": "^3.5.25",
+    "mermaid": "^11.13.0",
+    "prettier": "^3.8.1",
+    "sass-embedded": "^1.98.0",
+    "vue": "^3.5.30",
     "vuepress": "2.0.0-rc.24",
     "vuepress-theme-hope": "2.0.0-rc.94"
   },
