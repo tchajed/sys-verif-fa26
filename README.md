@@ -1,4 +1,4 @@
-# Systems verification Fall 2025 course website
+# Systems verification Fall 2026 course website
 
 [![deploy](https://github.com/tchajed/sys-verif-fa25/actions/workflows/deploy.yml/badge.svg)](https://github.com/tchajed/sys-verif-fa25/actions/workflows/deploy.yml) [![website](https://img.shields.io/badge/website-blue?logo=web)](https://tchajed.github.io/sys-verif-fa25/)
 
