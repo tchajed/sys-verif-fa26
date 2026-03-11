@@ -189,7 +189,7 @@ Definition Arithⁱᵐᵖˡ : val :=
 
 Note the `exception_do` wrapper, which is used to implement the control flow for function returns: a `return: e` expression inside will return early, preventing execution of code afterward. On the other hand `do: e` will run as normal and proceed to the next line. This sequencing-with-return is implemented by `;;;`, which is _not_ the same as the usual sequencing `;;`.
 
-As a user of goose, the implementation of these control flow constructs is largely invisible --- In proofs, `wp_pures` (which is called by `wp_auto`) will "step" over control flow as needed. `wp_apply` will work inside the `exception_do` wrapper. If you want an idea of the semantics of these operations, see the comments in Perennial's [defn/exception.v](https://github.com/mit-pdos/perennial/blob/master/new/golang/defn/exception.v).
+As a user of goose, the implementation of these control flow constructs is largely invisible --- In proofs, `wp_auto` (which is called by `wp_auto`) will "step" over control flow as needed. `wp_apply` will work inside the `exception_do` wrapper. If you want an idea of the semantics of these operations, see the comments in Perennial's [defn/exception.v](https://github.com/mit-pdos/perennial/blob/master/new/golang/defn/exception.v).
 
 The first thing the code does within the `exception_do` is to allocate `"a"` and `"b"` on the heap for the function arguments, as we saw in the previous example.
 
@@ -265,7 +265,9 @@ From sys_verif.program_proof Require Import heap_init functional_init.
 
 Section goose.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : functional.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
@@ -279,7 +281,7 @@ func Add(a uint64, b uint64) uint64 {
 
 You will see `is_pkg_init <pkg>` in all preconditions for functions and methods. This asserts that the package (`functional` in this case) for the relevant function has been initialized. We need this precondition because initialization is where the code for `functional.Add` (the `Addⁱᵐᵖˡ` expression) is stored in a global variable where it is accessed by `func_call`. `wp_start` knows how to handle `is_pkg_init` and automatically puts it in the right place, so you don't mention it in the intro pattern passed to `wp_start`.
 
-We finish the proof with `wp_finish`. This is just a shorthand for `iApply "HΦ"` followed by some tactics to solve any trivial postcondition. Recall where `HΦ` comes from: all of our specifications are stated in continuation-passing style in the form `∀ Φ, P -∗ (Q -∗ Φ) -∗ wp e Φ`; `HΦ` is that second premise `Q -∗ Φ`.
+We finish the proof with `wp_end`. This is just a shorthand for `iApply "HΦ"` followed by some tactics to solve any trivial postcondition. Recall where `HΦ` comes from: all of our specifications are stated in continuation-passing style in the form `∀ Φ, P -∗ (Q -∗ Φ) -∗ wp e Φ`; `HΦ` is that second premise `Q -∗ Φ`.
 
 ```rocq
 Lemma wp_Add (n m: w64) :
@@ -289,7 +291,7 @@ Lemma wp_Add (n m: w64) :
 Proof.
   wp_start as "%Hoverflow".
   wp_auto.
-  wp_finish. (* could do [iApply "HΦ". word.] *)
+  wp_end. (* could do [iApply "HΦ". word.] *)
 Qed.
 
 End goose.

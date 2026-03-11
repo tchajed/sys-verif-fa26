@@ -14,8 +14,10 @@ From sys_verif.program_proof Require Import prelude empty_ffi.
 From sys_verif.program_proof Require Import heap_init.
 
 Section proof.
-Context `{!heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context `{hG: !heapGS Σ}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
@@ -143,7 +145,7 @@ You'll need to find the right lemma to use here.
 Lemma ex_pure_impl s q (bs: list w8) :
   length bs = 3%nat →
   s ↦*{q} bs -∗
-  ⌜slice.len_f s = 3%Z⌝ ∗ s ↦*{q} bs.
+  ⌜slice.len s = W64 3⌝ ∗ s ↦*{q} bs.
 Proof.
 Admitted.
 
@@ -156,8 +158,8 @@ Read about [structs](../../notes/ownership.md#proofs-using-structs) (in particul
 ```rocq
 Lemma ex_split_struct l s :
   l ↦ heap.S1.mk (W64 3) s -∗
-  l ↦s[heap.S1 :: "a"] W64 3 ∗
-  l ↦s[heap.S1 :: "b"] s.
+  l.[heap.S1.t, "a"]↦ W64 3 ∗
+  l.[heap.S1.t, "b"]↦ s.
 Proof.
 Admitted.
 
@@ -176,6 +178,7 @@ Proof.
 :::: info Goal diff
 
 ```txt
+  package_sem : heap.Assumptions
   P : iProp Σ
   ============================
   "HP" : P
@@ -231,7 +234,7 @@ Proof.
   wp_pures.
 
   wp_bind (![_] #y_l)%E.
-  iApply (@wp_load_ty with "[y]").
+  iApply (wp_load with "[y]").
   { iFrame. }
   iModIntro. (* remove the ▷ ("later") modality from the goal - you can ignore
   this *)
@@ -244,12 +247,12 @@ Proof.
   (* [wp_apply] automates the process of finding where to apply the spec, so we
   don't have to use [wp_bind]. It also automatically removes the ▷ from the
   resulting goal. *)
-  wp_apply (@wp_load_ty with "[$Hy]"). iIntros "Hy".
+  wp_apply (wp_load with "[$Hy]"). iIntros "Hy".
 
   (* Loading and storing variables is common enough that there's a tactic
   [wp_load] which automates the work of [wp_bind], finding the right hypothesis
   with a points-to fact (that is, something like [l2 ↦ y]), and also
-  re-introducing the hypothesis after using the [wp_load_ty] or [wp_store_ty]
+  re-introducing the hypothesis after using the [wp_load] or [wp_store]
   lemma. *)
 
   wp_pures. wp_store.

@@ -73,7 +73,9 @@ From sys_verif.program_proof Require Import heap_init functional_init.
 
 Section goose.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions} {package_sem' : functional.Assumptions}.
+Collection W := sem + package_sem + package_sem'.
+Set Default Proof Using "W".
 
 ```
 
@@ -89,52 +91,58 @@ Lemma wp_SumNrec (n: w64) :
   {{{ (m: w64), RET #m; ⌜uint.Z m = uint.Z n * (uint.Z n + 1) / 2⌝ }}}.
 Proof.
   (* Löb induction is a somewhat magical principle that says we can assume our function is correct while proving it, as long as we only use its correctness for _recursive_ subcalls (to avoid circular reasoning). The intuitive reason why this makes sense is that we only prove partial correctness, so we assume the function terminates. Given that assumption, what we're doing is  induction on the number of steps the function takes to terminate. *)
-  iLöb as "IH" forall (n).
+  iLöb as "IH" forall (n). iFreeze "IH".
   wp_start as "%Hoverflow".
 ```
 
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
+  package_sem' : functional.Assumptions
   n : w64
+  __frozen := ☃ : iPropI Σ
   Φ : val → iPropI Σ
   Hoverflow : (uint.Z n * (uint.Z n + 1)) `div` 2 < 2 ^ 64
   ============================
-  "IH" : ∀ (n0 : w64) (x : val → iPropI Σ),
-           is_pkg_init functional ∗
-           ⌜(uint.Z n0 * (uint.Z n0 + 1)) `div` 2 < 2 ^ 64⌝ -∗
-           ▷ (∀ m : w64,
-                ⌜uint.Z m = (uint.Z n0 * (uint.Z n0 + 1)) `div` 2⌝ -∗ x (# m)) -∗
-           WP # (func_callv functional.SumNrec) (# n0) {{ v, x v }}
+  "IH" : __frozen
   _ : is_pkg_init functional
   --------------------------------------□
   "HΦ" : ∀ m : w64,
            ⌜uint.Z m = (uint.Z n * (uint.Z n + 1)) `div` 2⌝ -∗ Φ (# m)
   --------------------------------------∗
   WP exception_do
-       (let: "n" := alloc (# n) in
-        (if: ![# uint64T] "n" = # (W64 0) then return:
-         # (W64 0) else do: # ()) ;;;
-        return: ![# uint64T] "n" +
-                (let: "$a0" := ![# uint64T] "n" - # (W64 1) in
-                 func_call (# functional.SumNrec) "$a0"))
+       (let: "n" := GoAlloc go.uint64 (# n) in
+        (if: Convert go.untyped_bool go.bool
+               (![go.uint64] "n" =⟨go.uint64⟩ # (W64 0))
+         then return: # (W64 0) else do: # ()%V) ;;;
+        return: ![go.uint64] "n" +⟨go.uint64⟩ (let: "$a0" :=
+                                               ![go.uint64] "n" -⟨go.uint64⟩
+                                               # (W64 1) in
+                                               FuncResolve functional.SumNrec
+                                                 []
+                                                 (# ()%V) "$a0"))
   {{ v, Φ v }}
 ```
 
 ::::
+
+```rocq
+  iThaw "IH".
+```
 
 Notice here how Löb induction gives us the correctness of `functional.SumNrec` as an assumption, but the goal is a proof about the body of that function, so `"IH"` is only useful for recursive calls.
 
 ```rocq
   wp_auto.
   wp_if_destruct.
-  - wp_finish.
-  - wp_apply "IH".
+  - wp_end.
+  - iThaw "IH". wp_apply "IH".
     { (* [word] doesn't work on its own here (possibly a bug in the tactic). It's helpful to know how to do some of the work it does manually, to help it along. *)
       rewrite -> !word.unsigned_sub_nowrap by word.
       word. }
     iIntros (m Hm).
-    wp_finish.
+    wp_end.
 Qed.
 
 ```
@@ -188,7 +196,7 @@ Proof.
   wp_if_destruct.
   - (* the code breaks in this branch, at which point we have to verify the code after the loop *)
     wp_for_post.
-    wp_finish.
+    wp_end.
     iPureIntro.
     (* oops, don't know anything about sum *)
     admit.
@@ -253,10 +261,11 @@ If we use named hypotheses (e.g., the `"sum" ::` label above), then passing the 
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
+  package_sem' : functional.Assumptions
   n : w64
   Φ : val → iPropI Σ
   Hn_bound : uint.Z n < 2 ^ 64 - 1
-  n_ptr, sum_ptr, i_ptr : loc
   sum, i : w64
   i_bound : uint.Z i ≤ uint.Z n + 1
   Hsum_ok : uint.Z sum = ((uint.Z i - 1) * uint.Z i) `div` 2
@@ -266,9 +275,6 @@ If we use named hypotheses (e.g., the `"sum" ::` label above), then passing the 
   --------------------------------------□
   "HΦ" : ∀ m : w64,
            ⌜uint.Z m = (uint.Z n * (uint.Z n + 1)) `div` 2⌝ -∗ Φ (# m)
-  "n" : n_ptr ↦ n
-  "sum" : sum_ptr ↦ sum
-  "i" : i_ptr ↦ i
   --------------------------------------∗
   Φ (# sum)
 ```
@@ -278,7 +284,7 @@ If we use named hypotheses (e.g., the `"sum" ::` label above), then passing the 
 With this correct loop invariant, notice the extra pure facts we have when the loop `break`s: `i_bound` and `Hsum_ok` come from the loop invariant, and `n < i` comes from the `if` test we just did.
 
 ```rocq
-    wp_finish.
+    wp_end.
     iPureIntro.
 
 ```
@@ -358,7 +364,7 @@ This is much trickier integer arithmetic reasoning than you will encounter in th
       (uint.Z i * (uint.Z i - 1) + uint.Z i * 2) by lia.
     rewrite Z_div_plus; [ lia | ].
     lia.
-  - wp_finish.
+  - wp_end.
     iPureIntro.
     assert (sint.Z i = sint.Z n) by word.
     word.
@@ -421,9 +427,9 @@ Definition is_sorted (xs: list w64) :=
                   uint.Z x1 < uint.Z x2.
 
 Lemma wp_BinarySearch (s: slice.t) (xs: list w64) (needle: w64) :
-  {{{ is_pkg_init heap.heap ∗
+  {{{ is_pkg_init pkg_id.heap ∗
         s ↦* xs ∗ ⌜is_sorted xs⌝ }}}
-    @! heap.heap.BinarySearch #s #needle
+    @! heap.BinarySearch #s #needle
   {{{ (i: w64) (ok: bool), RET (#i, #ok);
       s ↦* xs ∗
       ⌜ok = true → xs !! sint.nat i = Some needle⌝
@@ -463,8 +469,8 @@ Proof.
   }
   wp_for "HI".
   - wp_if_destruct.
-    + wp_pure.
-      { rewrite word.signed_add.
+    + rewrite -> decide_True.
+      2:{ rewrite word.signed_add.
         rewrite Automation.word.word_signed_divs_nowrap_pos; [ word | ].
         word. }
       set (mid := word.add i (word.divs (word.sub j i) (W64 2)) : w64).
@@ -474,7 +480,7 @@ Proof.
         rewrite Automation.word.word_signed_divs_nowrap_pos; [ word | ].
         word. }
       list_elem xs (sint.nat mid) as x_mid.
-      wp_apply (wp_load_slice_elem with "[$Hs]") as "Hs".
+      wp_apply (wp_load_slice_index with "[$Hs]") as "Hs".
       { word. }
       { eauto. }
       wp_if_destruct.
@@ -515,18 +521,17 @@ Proof.
         lia.
     + wp_if_destruct.
       * list_elem xs (sint.nat i) as x_i.
-        wp_pure.
-        { word. }
-        wp_apply (wp_load_slice_elem with "[$Hs]") as "Hs".
+        rewrite -> decide_True; last word.
+        wp_apply (wp_load_slice_index with "[$Hs]") as "Hs".
         { word. }
         { eauto. }
-        wp_finish.
+        wp_end.
         iFrame.
         iPureIntro.
         intros Heq.
         apply bool_decide_eq_true_1 in Heq. subst.
         auto.
-      * wp_finish.
+      * wp_end.
 Qed.
 
 ```

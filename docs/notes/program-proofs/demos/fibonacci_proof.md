@@ -21,7 +21,9 @@ From sys_verif.program_proof Require Import functional_init.
 
 Section proof.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : functional.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 Fixpoint fibonacci (n: nat): nat :=
   match n with

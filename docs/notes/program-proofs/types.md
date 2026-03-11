@@ -14,7 +14,7 @@ This reference explains how the type setup works.
 
 It will help a good deal in following the details here to understand typeclasses in Rocq. Practically to do proofs you might not interact with them much, but some understanding will help you understand error messages when things go wrong. A good but long tutorial is included in [Software Foundations](https://softwarefoundations.cis.upenn.edu/qc-current/Typeclasses.html).
 
-The most important typeclass for Goose is `IntoVal V`. Its definition is the following:
+FIXME: out of date. No more typeclass The most important typeclass for Goose is `IntoVal V`. Its definition is the following:
 
 ```rocq
 Class IntoVal (V: Type) :=
@@ -50,18 +50,20 @@ From sys_verif.program_proof Require Import heap_init.
 
 Section proof.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
 Let's see those `IntoVal` instances in use.
 
 ```rocq
-Definition int_to_val (x: w64): val := to_val x.
-Definition int_to_val_notation (x: w64): val := #x.
+Definition int_into_val (x: w64): val := into_val x.
+Definition int_into_val_notation (x: w64): val := #x.
 
 (* these even print the same *)
-Lemma notation_is_to_val (x: w64) : #x = to_val x.
+Lemma notation_is_to_val (x: w64) : #x = into_val x.
 Proof. reflexivity. Qed.
 
 ```
@@ -75,29 +77,42 @@ Locate "↦".
 :::: note Output
 
 ```txt
-Notation "l ↦ dq v" := (typed_pointsto l dq v) : bi_scope
+Notation "l ↦ dq v" := (typed_pointsto l v dq)
+  (* dq in scope _dfrac_scope, v in scope val_scope *) : bi_scope
+  (from New.golang.theory.postlifting)
 Notation "'[∨' 'list]' k ↦ x ∈ l , P" := (big_opL bi_or (fun k x => P) l)
-  : bi_scope
+  (* l in scope _list_scope, P in scope bi_scope *) : bi_scope
+  (from iris.bi.big_op)
 Notation "'[∧' 'map]' k ↦ x ∈ m , P" := (big_opM bi_and (fun k x => P) m)
-  : bi_scope
+  : bi_scope (from iris.bi.big_op)
 Notation "'[∧' 'list]' k ↦ x ∈ l , P" := (big_opL bi_and (fun k x => P) l)
-  : bi_scope
+  (* l in scope _list_scope, P in scope bi_scope *) : bi_scope
+  (from iris.bi.big_op)
 Notation "'[∗' 'maps]' k ↦ x ; .. ; y ∈ ms , P" :=
-  (big_sepMs ms (fun k x => .. (fun y => P) ..)) : bi_scope
+  (big_sepMs ms (fun k x => .. (fun y => P) ..))
+  (* ms in scope big_sepms_maps_scope *) : bi_scope
+  (from Perennial.algebra.big_op.big_sepML)
 Notation "'[∗' 'maplist]' k ↦ x ; v ∈ m ; l , P" :=
-  (big_sepML (fun k x v => P) m l) : bi_scope
+  (big_sepML (fun k x v => P) m l) (* l in scope _list_scope *) : bi_scope
+  (from Perennial.algebra.big_op.big_sepML)
 Notation "'[∗' 'map]' k ↦ x ∈ m , P" := (big_opM bi_sep (fun k x => P) m)
-  : bi_scope
+  (* P in scope bi_scope *) : bi_scope (from iris.bi.big_op)
 Notation "'[∗' 'map]' k ↦ x1 ; x2 ∈ m1 ; m2 , P" :=
-  (big_sepM2 (fun k x1 x2 => P) m1 m2) : bi_scope
+  (big_sepM2 (fun k x1 x2 => P) m1 m2) (* P in scope bi_scope *) : bi_scope
+  (from iris.bi.big_op)
 Notation "'[∗' 'list]' k ↦ x ∈ l , P" := (big_opL bi_sep (fun k x => P) l)
-  : bi_scope
+  (* l in scope _list_scope, P in scope bi_scope *) : bi_scope
+  (from iris.bi.big_op)
 Notation "'[∗' 'list]' k ↦ x1 ; x2 ∈ l1 ; l2 , P" :=
-  (big_sepL2 (fun k x1 x2 => P) l1 l2) : bi_scope
+  (big_sepL2 (fun k x1 x2 => P) l1 l2)
+  (* l1 in scope _list_scope, l2 in scope _list_scope, P in scope bi_scope *)
+  : bi_scope (from iris.bi.big_op)
 Notation "'[^' o 'map]' k ↦ x ∈ m , P" := (big_opM o (fun k x => P) m)
-  : stdpp_scope (default interpretation)
+  (* o in scope _function_scope *) : stdpp_scope (default interpretation)
+  (from iris.algebra.big_op)
 Notation "'[^' o 'list]' k ↦ x ∈ l , P" := (big_opL o (fun k x => P) l)
-  : stdpp_scope (default interpretation)
+  (* o in scope _function_scope, l in scope _list_scope *) : stdpp_scope
+  (default interpretation) (from iris.algebra.big_op)
 ```
 
 ::::
@@ -110,17 +125,14 @@ About typed_pointsto.
 
 ```txt
 typed_pointsto :
-∀ {ext : ffi_syntax} {ffi : ffi_model} {ffi_interp0 : ffi_interp ffi}
-  {Σ : gFunctors},
-  heapGS Σ → ∀ {V : Type}, IntoVal V → loc → dfrac → V → iProp Σ
+∀ {Σ : gFunctors} {V : Type}, TypedPointsto V → loc → V → dfrac → iProp Σ
 
 typed_pointsto is not universe polymorphic
-Arguments typed_pointsto {ext ffi ffi_interp0 Σ heapGS0}
-  {V}%type_scope {IntoVal0} l dq%dfrac_scope v
+Arguments typed_pointsto {Σ} {V}%_type_scope {TypedPointsto}
+  l v dq%_dfrac_scope
 typed_pointsto is transparent
-Expands to: Constant New.golang.theory.typed_pointsto.typed_pointsto
-Declared in
-library New.golang.theory.typed_pointsto, line 19, characters 13-27
+Expands to: Constant New.golang.theory.postlifting.typed_pointsto
+Declared in library New.golang.theory.postlifting, line 50, characters 19-33
 ```
 
 ::::
@@ -149,7 +161,7 @@ Print heap.Person.t.
 Record t : Type := mk
   { FirstName' : go_string;  LastName' : go_string;  Age' : w64 }.
 
-Arguments heap.Person.mk (FirstName' LastName')%byte_string_scope Age'
+Arguments heap.Person.mk (FirstName' LastName')%_byte_string_scope Age'
 Arguments heap.Person.FirstName' t
 Arguments heap.Person.LastName' t
 Arguments heap.Person.Age' t
@@ -189,14 +201,14 @@ proofgen gives us an `IntoVal heap.Person.t` instance, which we can use to state
 
 ```rocq
 Lemma wp_ExamplePersonRef :
-  {{{ is_pkg_init heap.heap }}}
+  {{{ is_pkg_init heap }}}
     @! heap.ExamplePersonRef #()
   {{{ (l: loc), RET #l;
       l ↦ (heap.Person.mk "Ada" "Lovelace" (W64 25)) }}}.
 Proof.
   wp_start as "_".
   wp_alloc l as "p".
-  wp_finish.
+  wp_end.
 Qed.
 
 ```
@@ -205,105 +217,94 @@ We can split a points-to for a struct into its component fields. This is also im
 
 ```rocq
 Lemma wp_ExamplePersonRef_fields :
-  {{{ is_pkg_init heap.heap }}}
+  {{{ is_pkg_init heap }}}
     @! heap.ExamplePersonRef #()
   {{{ (l: loc), RET #l;
-      l ↦s[heap.Person :: "FirstName"] "Ada"%go ∗
-      l ↦s[heap.Person :: "LastName"] "Lovelace"%go ∗
-      l ↦s[heap.Person :: "Age"] W64 25
+      l.[heap.Person.t, "FirstName"] ↦ "Ada"%go ∗
+      l.[heap.Person.t, "LastName"] ↦ "Lovelace"%go ∗
+      l.[heap.Person.t, "Age"] ↦ W64 25
   }}}.
 Proof.
   wp_start as "#init".
   wp_alloc l as "p".
-  iApply struct_fields_split in "p".
-  (* the output of `struct_fields_split` can be simplified by splitting it with `iNamed` and with `cbn` (or `simpl`). *)
-  iNamed "p".
-  cbn [heap.Person.FirstName' heap.Person.LastName' heap.Person.Age'].
-  wp_finish.
+  iStructNamed "p". simpl.
+  wp_end.
 Qed.
 
 ```
 
 ## Methods on structs
 
-When we state a wp spec for a method (as opposed to a function), we have to say what type the method is for to be unambigious. This is the same information that goes into the Go type signature, just written in a different way. Here we need to reference not the Go type, but its "identifier", a unique name for it. Here's an example of stating such a lemma, where the receiver is a `Person` value (not a pointer). Notice that the type identifier provided is `heap.Person.id`.
+When we state a wp spec for a method (as opposed to a function), we have to say what type the method is for to be unambigious. This is the same information that goes into the Go type signature, just written in a different way. Here we need to reference not the Go type, but its "identifier", a unique name for it. Here's an example of stating such a lemma, where the receiver is a `Person` value (not a pointer). Notice that the type identifier provided is `heap.Person`.
 
 ```rocq
 Lemma wp_Person__Name (firstName lastName: go_string) (age: w64) :
-  {{{ is_pkg_init heap.heap }}}
-  (heap.Person.mk firstName lastName age) @ heap.Person.id @ "Name" #()
+  {{{ is_pkg_init heap }}}
+  (heap.Person.mk firstName lastName age) @! heap.Person @! "Name" #()
   {{{ RET #(firstName ++ " " ++ lastName)%go; True }}}.
 Proof.
   wp_start as "#init".
-  (* wp_pures will automatically handle these field reference calculations, which compute pointers to the struct fields (at this point the method receiver is behind a pointer because all method arguments are stored on the heap to make them mutable). *)
-  wp_alloc p_l as "p". wp_pures.
+  (* wp_auto will automatically handle these field reference calculations, which compute pointers to the struct fields (at this point the method receiver is behind a pointer because all method arguments are stored on the heap to make them mutable). *)
+  wp_alloc p_l as "p". wp_auto.
 ```
 
 :::: info Goal diff
 
 ```txt
+  package_sem : heap.Assumptions
   firstName, lastName : go_string
   age : w64
   Φ : val → iPropI Σ
-  p_l : loc
+  p_l : loc // [!code --]
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
   "HΦ" : True -∗ Φ (# (firstName ++ " "%go ++ lastName))
-  "p" : p_l ↦ {|
-                heap.Person.FirstName' := firstName;
-                heap.Person.LastName' := lastName;
-                heap.Person.Age' := age
-              |}
+  "p" : p_l ↦ {| // [!code --]
+                heap.Person.FirstName' := firstName; // [!code --]
+                heap.Person.LastName' := lastName; // [!code --]
+                heap.Person.Age' := age // [!code --]
+              |} // [!code --]
   --------------------------------------∗
-  WP exception_do
+  WP exception_do // [!code --]
        (let: "p" := # p_l in // [!code --]
-        return: ![# stringT] (struct.field_ref (# heap.Person) // [!code --]
-                                (# "FirstName"%go) "p") + // [!code --]
-       (return: ![# stringT] (# // [!code ++]
-                                (struct.field_ref_f heap.Person "FirstName" // [!code ++]
-                                   p_l)) + // [!code ++]
-                # " "%go +
-                ![# stringT] (struct.field_ref (# heap.Person)
-                                (# "LastName"%go) "p")) // [!code --]
-                                (# "LastName"%go)  // [!code ++]
-                                (# p_l))) // [!code ++]
-  {{ v, Φ v }}
+        return: (![go.string] (StructFieldRef heap.Person "FirstName" "p") +⟨go.string⟩  // [!code --]
+                 # " "%go) +⟨go.string⟩ ![go.string]  // [!code --]
+                (StructFieldRef heap.Person "LastName" "p")) // [!code --]
+  {{ v, Φ v }} // [!code --]
+  Φ (# ((firstName ++ " "%go) ++ lastName)) // [!code ++]
 ```
 
 ::::
 
 ```rocq
-  iApply struct_fields_split in "p"; iNamed "p";
-  cbn [heap.Person.FirstName' heap.Person.LastName' heap.Person.Age'].
-  wp_auto.
-  wp_finish.
+  wp_end.
   rewrite -app_assoc //.
 Qed.
 
 ```
 
-One more example of a method, this time on a pointer. Thus we need the receiver to be a `loc`, the precondition needs ownership over that pointer (specifically, to all the fields of a `Person` at that location), and finally the receiver type is `(ptrT.id heap.Person.id)` to represent a pointer to a `Person` struct.
+One more example of a method, this time on a pointer. Thus we need the receiver to be a `loc`, the precondition needs ownership over that pointer (specifically, to all the fields of a `Person` at that location), and finally the receiver type is `(go.PointerType heap.Person)` to represent a pointer to a `Person` struct.
 
 ```rocq
 Lemma wp_Person__Older (firstName lastName: byte_string) (age: w64) (p: loc) (delta: w64) :
-  {{{ is_pkg_init heap.heap ∗
-      p ↦s[heap.Person :: "FirstName"] firstName ∗
-      p ↦s[heap.Person :: "LastName"] lastName ∗
-      p ↦s[heap.Person :: "Age"] age
+  {{{ is_pkg_init heap ∗
+      p.[heap.Person.t, "FirstName"] ↦ firstName ∗
+      p.[heap.Person.t, "LastName"] ↦ lastName ∗
+      p.[heap.Person.t, "Age"] ↦ age
   }}}
-    p @ (ptrT.id heap.Person.id) @ "Older" #delta
+    p @! (go.PointerType heap.Person) @! "Older" #delta
   {{{ RET #();
-      p ↦s[heap.Person :: "FirstName"] firstName ∗
-      p ↦s[heap.Person :: "LastName"] lastName ∗
+      p.[heap.Person.t, "FirstName"] ↦ firstName ∗
+      p.[heap.Person.t, "LastName"] ↦ lastName ∗
       (* we avoid overflow reasoning by saying the resulting integer is just
       [word.add age delta], which will wrap at 2^64  *)
-      p ↦s[heap.Person :: "Age"] word.add age delta
+      p.[heap.Person.t, "Age"] ↦ word.add age delta
   }}}.
 Proof.
   wp_start as "(first & last & age)".
   wp_auto.
-  wp_finish.
+  wp_end.
 Qed.
 
 ```

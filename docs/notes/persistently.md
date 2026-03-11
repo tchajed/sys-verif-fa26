@@ -28,10 +28,12 @@ From New.proof Require Import std.
 From New.generatedproof.sys_verif_code Require Import memoize.
 
 Section proof.
-Context `{hG: !heapGS Σ} `{!globalsGS Σ} {go_ctx: GoContext}.
+Context `{hG: !heapGS Σ} {sem : go.Semantics} {package_sem : memoize.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
-#[global] Instance : IsPkgInit memoize := define_is_pkg_init True%I.
-#[global] Instance : GetIsPkgInitWf memoize := build_get_is_pkg_init_wf.
+#[global] Instance : IsPkgInit (iProp Σ) memoize := define_is_pkg_init True%I.
+#[global] Instance : GetIsPkgInitWf (iProp Σ) memoize := build_get_is_pkg_init_wf.
 
 ```
 
@@ -50,9 +52,9 @@ Fractions also support _combining_ to recover full ownership and go back to bein
 ```rocq
 Lemma split_fraction_example (l: loc) (x: w64) :
   {{{ l ↦ x ∗ ⌜uint.Z x < 100⌝ }}}
-    let: "y" := ![#uint64T] #l in
-    let: "z" := ![#uint64T] #l in
-    #l <-[#uint64T] ("y" + "z")
+    let: "y" := ![go.uint64] #l in
+    let: "z" := ![go.uint64] #l in
+    #l <-[go.uint64] ("y" +⟨go.uint64⟩ "z")
   {{{ RET #(); l ↦ (word.add x x) }}}.
 Proof.
   wp_start as "[Hx %Hbound]".
@@ -62,6 +64,7 @@ Proof.
 :::: info Goal diff
 
 ```txt
+  package_sem : memoize.Assumptions
   l : loc
   x : w64
   Φ : val → iPropI Σ
@@ -70,10 +73,10 @@ Proof.
   "Hx" : l ↦ x // [!code --]
   "Hx1" : l ↦{#1 / 2} x // [!code ++]
   "Hx2" : l ↦{#1 / 2} x // [!code ++]
-  "HΦ" : ▷ (l ↦ word.add x x -∗ Φ (# ()))
+  "HΦ" : ▷ (l ↦ word.add x x -∗ Φ (# ()%V))
   --------------------------------------∗
-  WP let: "y" := ![# uint64T] (# l) in
-     let: "z" := ![# uint64T] (# l) in # l <-[# uint64T] "y" + "z"
+  WP let: "y" := ![go.uint64] (# l) in
+     let: "z" := ![go.uint64] (# l) in # l <-[go.uint64] "y" +⟨go.uint64⟩ "z"
   {{ v, Φ v }}
 ```
 
@@ -87,6 +90,7 @@ Proof.
 :::: info Goal diff
 
 ```txt
+  package_sem : memoize.Assumptions
   l : loc
   x : w64
   Φ : val → iPropI Σ
@@ -94,10 +98,10 @@ Proof.
   ============================
   "Hx1" : l ↦{#1 / 2} x // [!code --]
   "Hx2" : l ↦{#1 / 2} x // [!code --]
-  "HΦ" : l ↦ word.add x x -∗ Φ (# ())
+  "HΦ" : l ↦ word.add x x -∗ Φ (# ()%V)
   "Hx" : l ↦ x // [!code ++]
   --------------------------------------∗
-  WP # l <-[# uint64T] # (word.add x x) {{ v, Φ v }}
+  WP GoStore go.uint64 (# l, # (word.add x x))%V {{ v, Φ v }}
 ```
 
 ::::
@@ -136,7 +140,7 @@ So what propositions are persistent? First, the pure propositions are persistent
 ```rocq
 Lemma alloc_ro_spec (x: w64) :
   {{{ True }}}
-    alloc #x
+    GoAlloc go.int #x
   {{{ (l: loc), RET #l; l ↦□ x }}}.
 Proof.
   wp_start as "_".
@@ -154,6 +158,7 @@ This is the step where we persist the points-to permission and turn it into a pe
 :::: info Goal diff
 
 ```txt
+  package_sem : memoize.Assumptions
   x : w64
   Φ : val → iPropI Σ
   l : loc
@@ -173,7 +178,6 @@ Notice from the goal diff that the output (renamed to "Hro" for clarity) is put 
 To obtain the persistent points-to assertion, we have to give up the regular fractional assertion, and this operation is _not_ reversible - the persistence relies on the location never being written to.
 
 ```rocq
-  wp_pures.
   iModIntro.
   iApply "HΦ".
   iFrame "Hro".
@@ -186,13 +190,12 @@ With a persistent permission, it's reasonable (and expected) that the permission
 ```rocq
 Lemma read_discarded_spec (l: loc) (x: w64) :
   {{{ l ↦□ x }}}
-    ![#uint64T] #l
+    ![go.uint64] #l
   {{{ RET #x; True }}}.
 Proof.
   wp_start as "#H".
-  wp_apply (@wp_load_ty with "[$H]"). iIntros "_".
+  wp_apply (wp_load with "[$H]"). iIntros "_".
   iApply "HΦ". auto.
-  Unshelve.
 Qed.
 
 ```
@@ -292,7 +295,7 @@ There are several interesting things in the representation function `own_mock_me
 ```rocq
 Definition own_mock_memoize (m: loc) (f: w64 → w64) : iProp Σ :=
    ∃ (f_code: func.t),
-     "#Hf" :: m ↦s[memoize.MockMemoize :: "f"]□ f_code ∗
+     "#Hf" :: m.[memoize.MockMemoize.t, "f"] ↦□ f_code ∗
      "#Hf_spec" :: fun_implements f_code f.
 
 Lemma wp_NewMockMemoize (f_code: func.t) (f: w64 → w64) :
@@ -306,6 +309,7 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   f_code : func.t
   f : w64 → w64
   Φ : val → iPropI Σ
@@ -316,11 +320,21 @@ Proof.
   "HΦ" : ∀ l : loc, own_mock_memoize l f -∗ Φ (# l)
   --------------------------------------∗
   WP exception_do
-       (let: "f" := alloc (# f_code) in
-        return: alloc
-                  (let: "$f" := ![# funcT] "f" in
-                   struct.make (# memoize.MockMemoize)
-                     (list.Cons (# "f"%go, "$f") (alist_val []))))
+       (let: "f" := GoAlloc
+                      (go.FunctionType
+                         (go.Signature [go.uint64] false [go.uint64]))
+                      (# f_code) in
+        return: GoAlloc memoize.MockMemoize
+                  (let: "$v0" := ![go.FunctionType
+                                     (go.Signature [go.uint64] false
+                                        [go.uint64])] "f" in
+                   CompositeLiteral memoize.MockMemoize
+                     (LiteralValue
+                        [KeyedElement (Some (KeyField "f"))
+                           (ElementExpression
+                              (go.FunctionType
+                                 (go.Signature [go.uint64] false [go.uint64]))
+                              "$v0")])))
   {{ v, Φ v }}
 ```
 
@@ -333,26 +347,25 @@ Proof.
   wp_auto.
   wp_alloc m as "Hm".
   wp_auto.
-  iApply struct_fields_split in "Hm". iNamed "Hm".
-  iSimpl in "Hf".
-  iPersist "Hf".
+  iStructNamed "Hm". iSimpl in "f".
+  iPersist "f".
 ```
 
 :::: info Goal diff
 
 ```txt
+  package_sem : memoize.Assumptions
   f_code : func.t
   f : w64 → w64
   Φ : val → iPropI Σ
-  f_ptr, m : loc
+  m : loc
   ============================
   _ : is_pkg_init memoize
   "Hfun" : fun_implements f_code f
-  "Hf" : m ↦s[memoize.MockMemoize :: "f"]□ f_code // [!code ++]
+  "f" : m.[memoize.MockMemoize.t, "f"] ↦□ f_code // [!code ++]
   --------------------------------------□
   "HΦ" : ∀ l : loc, own_mock_memoize l f -∗ Φ (# l)
-  "f" : f_ptr ↦ f_code
-  "Hf" : m ↦s[memoize.MockMemoize :: "f"] f_code // [!code --]
+  "f" : m.[memoize.MockMemoize.t, "f"] ↦ f_code // [!code --]
   --------------------------------------∗
   |={⊤}=> Φ (# m)
 ```
@@ -375,7 +388,7 @@ Once an `own_mock_memoize` is set up, using it is very straightforward.
 ```rocq
 Lemma wp_MockMemoize__Call l f (x0: w64) :
   {{{ is_pkg_init memoize ∗ own_mock_memoize l f }}}
-    l @ (ptrT.id memoize.MockMemoize.id) @ "Call" #x0
+    l @! (go.PointerType memoize.MockMemoize) @! "Call" #x0
   {{{ RET #(f x0); True }}}.
 Proof.
   wp_start as "#Hm". iNamed "Hm".
@@ -384,6 +397,7 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   l : loc
   f : w64 → w64
   x0 : w64
@@ -391,17 +405,19 @@ Proof.
   f_code : func.t
   ============================
   _ : is_pkg_init memoize
-  "Hf" : l ↦s[memoize.MockMemoize :: "f"]□ f_code
+  "Hf" : l.[memoize.MockMemoize.t, "f"] ↦□ f_code
   "Hf_spec" : fun_implements f_code f
   --------------------------------------□
   "HΦ" : True -∗ Φ (# (f x0))
   --------------------------------------∗
   WP exception_do
-       (let: "m" := alloc (# l) in
-        let: "x" := alloc (# x0) in
-        return: (let: "$a0" := ![# uint64T] "x" in
-                 ![# funcT] (struct.field_ref (# memoize.MockMemoize)
-                               (# "f"%go) ![# ptrT] "m")
+       (let: "m" := GoAlloc (go.PointerType memoize.MockMemoize) (# l) in
+        let: "x" := GoAlloc go.uint64 (# x0) in
+        return: (let: "$a0" := ![go.uint64] "x" in
+                 ![go.FunctionType
+                     (go.Signature [go.uint64] false [go.uint64])]
+                   (StructFieldRef memoize.MockMemoize "f"
+                      ![go.PointerType memoize.MockMemoize] "m")
                    "$a0"))
   {{ v, Φ v }}
 ```
@@ -424,21 +440,19 @@ Observe how in the next line we use a Hoare triple that comes _from the persiste
 :::: info Goal diff
 
 ```txt
+  package_sem : memoize.Assumptions
   l : loc
   f : w64 → w64
   x0 : w64
   Φ : val → iPropI Σ
   f_code : func.t
-  m_ptr, x_ptr : loc
   ============================
   _ : is_pkg_init memoize
-  "Hf" : l ↦s[memoize.MockMemoize :: "f"]□ f_code
+  "Hf" : l.[memoize.MockMemoize.t, "f"] ↦□ f_code
   "Hf_spec" : ∀ x : w64,
                 {{{ True }}} # f_code (# x) {{{ RET # (f x); True }}}
   --------------------------------------□
   "HΦ" : True -∗ Φ (# (f x0))
-  "m" : m_ptr ↦ l
-  "x" : x_ptr ↦ x0
   --------------------------------------∗
   WP exception_do (return: # f_code (# x0)) {{ v, Φ v }} // [!code --]
   Φ (# (f x0)) // [!code ++]
@@ -480,6 +494,7 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   f : w64 → w64
   f_code : func.t
   Φ : val → iPropI Σ
@@ -490,12 +505,26 @@ Proof.
   "HΦ" : ∀ v : memoize.Memoize.t, own_memoize v f -∗ Φ (# v)
   --------------------------------------∗
   WP exception_do
-       (let: "f" := alloc (# f_code) in
-        return: (let: "$f" := ![# funcT] "f" in
-                 let: "$results" := map.make (# uint64T) (# uint64T) in
-                 struct.make (# memoize.Memoize)
-                   (list.Cons (# "f"%go, "$f")
-                      (list.Cons (# "results"%go, "$results") (alist_val [])))))
+       (let: "f" := GoAlloc
+                      (go.FunctionType
+                         (go.Signature [go.uint64] false [go.uint64]))
+                      (# f_code) in
+        return: (let: "$v0" := ![go.FunctionType
+                                   (go.Signature [go.uint64] false
+                                      [go.uint64])] "f" in
+                 let: "$v1" := FuncResolve go.make1
+                                 [go.MapType go.uint64 go.uint64]
+                                 (# ()%V) (# ()%V) in
+                 CompositeLiteral memoize.Memoize
+                   (LiteralValue
+                      [KeyedElement (Some (KeyField "f"))
+                         (ElementExpression
+                            (go.FunctionType
+                               (go.Signature [go.uint64] false [go.uint64]))
+                            "$v0");
+                       KeyedElement (Some (KeyField "results"))
+                         (ElementExpression (go.MapType go.uint64 go.uint64)
+                            "$v1")])))
   {{ v, Φ v }}
 ```
 
@@ -503,8 +532,7 @@ Proof.
 
 ```rocq
   wp_auto.
-  wp_apply (wp_map_make) as "%m_ref Hm".
-  { auto. }
+  wp_apply (wp_map_make1) as "%m_ref Hm".
   iApply "HΦ".
   iFrame "Hf Hm".
   iPureIntro.
@@ -515,7 +543,7 @@ Qed.
 
 Lemma wp_Memoize__Call v f (x0: w64) :
   {{{ is_pkg_init memoize ∗ own_memoize v f }}}
-    v @ memoize.Memoize.id @ "Call" #x0
+    v @! memoize.Memoize @! "Call" #x0
   {{{ RET #(f x0); own_memoize v f }}}.
 Proof.
   wp_start as "Hm".
@@ -525,6 +553,7 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   f : w64 → w64
   x0 : w64
   Φ : val → iPropI Σ
@@ -544,40 +573,40 @@ Proof.
          Φ (# (f x0))
   --------------------------------------∗
   WP exception_do
-       (let: "m" := alloc
+       (let: "m" := GoAlloc memoize.Memoize
                       (#
                          {|
                            memoize.Memoize.f' := f_code;
                            memoize.Memoize.results' := m_ref
                          |}) in
-        let: "x" := alloc (# x0) in
-        let: "ok" := alloc (type.zero_val (# boolT)) in
-        let: "cached" := alloc (type.zero_val (# uint64T)) in
-        let: "__p" := map.get
-                        ![type.mapT (# uint64T) (# uint64T)]
-                        (struct.field_ref (# memoize.Memoize)
-                           (# "results"%go) "m")
-                        ![# uint64T] "x" in
+        let: "x" := GoAlloc go.uint64 (# x0) in
+        let: "ok" := GoAlloc go.bool (GoZeroVal go.bool (# ()%V)) in
+        let: "cached" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
+        let: "__p" := map.lookup2 go.uint64 go.uint64
+                        ![go.MapType go.uint64 go.uint64]
+                        (StructFieldRef memoize.Memoize "results" "m")
+                        ![go.uint64] "x" in
         let: "$ret0" := Fst "__p" in
         let: "$ret1" := Snd "__p" in
         let: "$r0" := "$ret0" in
         let: "$r1" := "$ret1" in
-        (do: "cached" <-[# uint64T] "$r0") ;;;
-        (do: "ok" <-[# boolT] "$r1") ;;;
-        (if: ![# boolT] "ok" then return: ![# uint64T] "cached" else do: # ()) ;;;
-        let: "y" := alloc (type.zero_val (# uint64T)) in
-        let: "$r0" := let: "$a0" := ![# uint64T] "x" in
-                      ![# funcT] (struct.field_ref
-                                    (# memoize.Memoize)
-                                    (# "f"%go) "m")
-                        "$a0" in
-        (do: "y" <-[# uint64T] "$r0") ;;;
-        let: "$r0" := ![# uint64T] "y" in
-        (do: map.insert
-               ![type.mapT (# uint64T) (# uint64T)]
-               (struct.field_ref (# memoize.Memoize) (# "results"%go) "m")
-               ![# uint64T] "x" "$r0") ;;;
-        return: ![# uint64T] "y")
+        (do: "cached" <-[go.uint64] "$r0") ;;;
+        (do: "ok" <-[go.bool] "$r1") ;;;
+        (if: ![go.bool] "ok" then return: ![go.uint64] "cached"
+         else do: # ()%V) ;;;
+        let: "y" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
+        let: "$r0" := let: "$a0" := ![go.uint64] "x" in
+                      ![go.FunctionType
+                          (go.Signature [go.uint64] false [go.uint64])]
+                        (StructFieldRef memoize.Memoize "f" "m") "$a0" in
+        (do: "y" <-[go.uint64] "$r0") ;;;
+        let: "$r0" := ![go.uint64] "y" in
+        (do: map.insert go.uint64
+               ![go.MapType go.uint64 go.uint64] (StructFieldRef
+                                                 memoize.Memoize "results"
+                                                 "m")
+               ![go.uint64] "x" "$r0") ;;;
+        return: ![go.uint64] "y")
   {{ v, Φ v }}
 ```
 
@@ -586,7 +615,7 @@ Proof.
 ```rocq
   wp_auto.
   cbn [memoize.Memoize.results'].
-  wp_apply (wp_map_get with "Hm") as "Hm".
+  wp_apply (wp_map_lookup2 with "Hm") as "Hm".
   wp_if_destruct; subst.
   - destruct i as [y Hget].
     assert (y = f x0) by eauto; subst.
@@ -639,6 +668,7 @@ Setting up the memoization is the most interesting part of the proof. To use the
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   Φ : val → iPropI Σ
   m_ptr : loc
   x : w64
@@ -652,8 +682,8 @@ Setting up the memoization is the most interesting part of the proof. To use the
         func.x := "x";
         func.e :=
           exception_do
-            (let: "x" := alloc "x" in
-             return: ![# uint64T] "x" * ![# uint64T] "x")
+            (let: "x" := GoAlloc go.uint64 "x" in
+             return: ![go.uint64] "x" *⟨go.uint64⟩ ![go.uint64] "x")
       |} (# x)
   {{{ RET # (word.mul x x); True }}}
 ```
@@ -669,12 +699,15 @@ It's somewhat subtle but the proof at this point is a Hoare triple inside separa
   }
   iIntros (v) "Hm".
   wp_auto.
+  wp_method_call; wp_auto.
   wp_apply (wp_Memoize__Call with "[$Hm]") as "Hm".
   wp_apply wp_Assert.
   { rewrite bool_decide_eq_true_2 //. }
+  wp_method_call; wp_auto.
   wp_apply (wp_Memoize__Call with "[$Hm]") as "Hm".
   wp_apply wp_Assert.
   { rewrite bool_decide_eq_true_2 //. }
+  wp_method_call; wp_auto.
   wp_apply (wp_Memoize__Call with "[$Hm]") as "Hm".
   wp_apply wp_Assert.
   { rewrite bool_decide_eq_true_2 //. }
@@ -705,7 +738,7 @@ Proof.
 Qed.
 
 Lemma wp_UseMemoize2 (s: slice.t) (x1 x2 x3: w64) :
-  {{{ is_pkg_init memoize ∗ own_slice s (DfracOwn 1) [x1; x2; x3] }}}
+  {{{ is_pkg_init memoize ∗ s ↦* [x1; x2; x3] }}}
     @! memoize.UseMemoize2 #s
   {{{ RET #(); True }}}.
 Proof.
@@ -728,11 +761,12 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   s : slice.t
   x1, x2, x3 : w64
   Φ : val → iPropI Σ
-  s_ptr, sumUpto_ptr, m_ptr : loc
-  Hsz : 3%nat = sint.nat (slice.len_f s) ∧ 0 ≤ sint.Z (slice.len_f s)
+  s_ptr, m_ptr : loc
+  Hsz : 3%nat = sint.nat (slice.len s) ∧ 0 ≤ sint.Z (slice.len s)
   n : w64
   ============================
   _ : is_pkg_init memoize
@@ -746,26 +780,29 @@ Proof.
         func.x := "n";
         func.e :=
           exception_do
-            (let: "n" := alloc "n" in
-             (if: ![# uint64T] "n" >
-                  s_to_w64 (let: "$a0" := ![# sliceT] (# s_ptr) in
-                            slice.len "$a0")
-              then return: # (W64 0) else do: # ()) ;;;
-             let: "sum" := alloc (type.zero_val (# uint64T)) in
-             (let: "i" := alloc (type.zero_val (# uint64T)) in
+            (let: "n" := GoAlloc go.uint64 "n" in
+             (if: Convert go.untyped_bool go.bool
+                    (![go.uint64] "n" >⟨go.uint64⟩
+                     Convert go.int go.uint64
+                       (let: "$a0" := ![go.SliceType go.uint64] (# s_ptr) in
+                        FuncResolve go.len [go.SliceType go.uint64]
+                          (# ()%V) "$a0"))
+              then return: # (W64 0) else do: # ()%V) ;;;
+             let: "sum" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
+             (let: "i" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
               let: "$r0" := # (W64 0) in
-              (do: "i" <-[# uint64T] "$r0") ;;;
-              for: (λ: <>, ![# uint64T] "n" > ![# uint64T] "i") ;
-              (λ: <>, do: "i" <-[# uint64T] ![# uint64T] "i" + # (W64 1)) :=
+              (do: "i" <-[go.uint64] "$r0") ;;;
+              for: (λ: <>, ![go.uint64] "i" <⟨go.uint64⟩ ![go.uint64] "n") ;
+              (λ: <>,
+                 do: "i" <-[go.uint64] ![go.uint64] "i" +⟨go.uint64⟩
+                     # (W64 1)) :=
                 λ: <>,
-                  do: "sum" <-[# uint64T] ![# uint64T] "sum" +
-                                          ![# uint64T]
-                                          (slice.elem_ref
-                                             (# uint64T)
-                                             ![# sliceT]
-                                             (# s_ptr) ![
-                                             # uint64T] "i")) ;;;
-             return: ![# uint64T] "sum")
+                  do: "sum" <-[go.uint64] ![go.uint64] "sum" +⟨go.uint64⟩ ![go.uint64]
+                      (IndexRef (go.SliceType go.uint64)
+                         (![go.SliceType go.uint64]
+                          (# s_ptr),
+                          Convert go.uint64 go.int ![go.uint64] "i"))) ;;;
+             return: ![go.uint64] "sum")
       |} (# n)
   {{{ RET #
             (if decide (uint.Z n ≤ 3)
@@ -784,7 +821,7 @@ The rest of this proof is general loop and slice reasoning and not related to th
     wp_start as "_".
     wp_auto.
     wp_if_destruct.
-    { simpl in Hsz.
+    {
       rewrite -> decide_False by word.
       iApply "HΦ"; done.
     }
@@ -797,10 +834,10 @@ The rest of this proof is general loop and slice reasoning and not related to th
     { iPureIntro. word. }
     wp_for "HI".
     wp_if_destruct.
-    - wp_pure.
-      { word. }
+    - rewrite -> decide_True by word.
+      rewrite -> decide_True by word.
       list_elem [x1; x2; x3] (sint.Z i) as x_i.
-      wp_apply (wp_load_slice_elem with "[$Hs]") as "_"; [ word | by eauto | ].
+      wp_apply (wp_load_slice_index with "[$Hs]") as "_"; [ word | by eauto | ].
       wp_for_post.
       iFrame.
       iSplit.
@@ -830,60 +867,22 @@ The little proof pattern below of using `iExactEq` is sometimes useful - it allo
 :::: info Goal
 
 ```txt
+  package_sem : memoize.Assumptions
   s : slice.t
   x1, x2, x3 : w64
   Φ : val → iPropI Σ
-  s_ptr, sumUpto_ptr, m_ptr : loc
-  Hsz : 3%nat = sint.nat (slice.len_f s) ∧ 0 ≤ sint.Z (slice.len_f s)
+  m_ptr : loc
+  Hsz : 3%nat = sint.nat (slice.len s) ∧ 0 ≤ sint.Z (slice.len s)
   m : memoize.Memoize.t
   ============================
   _ : is_pkg_init memoize
   "Hs" : s ↦*□ [x1; x2; x3]
-  "s" : s_ptr ↦□ s
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
-  "sumUpto" : sumUpto_ptr ↦ {|
-                              func.f := <>;
-                              func.x := "n";
-                              func.e :=
-                                exception_do
-                                  (let: "n" := alloc "n" in
-                                   (if: ![# uint64T] "n" >
-                                        s_to_w64 (let: "$a0" :=
-                                                 ![
-                                                 # sliceT]
-                                                 (# s_ptr) in
-                                                 slice.len "$a0")
-                                    then return: # (W64 0) else do:
-                                    # ()) ;;;
-                                   let: "sum" := alloc
-                                                 (type.zero_val (# uint64T)) in
-                                   (let: "i" := alloc
-                                                 (type.zero_val (# uint64T)) in
-                                    let: "$r0" :=
-                                    # (W64 0) in
-                                    (do: "i" <-[# uint64T] "$r0") ;;;
-                                    for: (λ: <>,
-                                            ![# uint64T] "n" >
-                                            ![# uint64T] "i") ;
-                                    (λ: <>,
-                                       do: "i" <-[
-                                           # uint64T]
-                                           ![# uint64T] "i" +
-                                           # (W64 1)) :=
-                                      λ: <>,
-                                        do: "sum" <-[
-                                            # uint64T]
-                                            ![# uint64T] "sum" +
-                                            ![# uint64T]
-                                            (slice.elem_ref
-                                               (# uint64T)
-                                               ![# sliceT]
-                                               (# s_ptr) ![
-                                               # uint64T] "i")) ;;;
-                                   return: ![# uint64T] "sum")%E
-                            |}
-  "m" : m_ptr ↦ default_val memoize.Memoize.t
+  "HΦ" : True -∗ Φ (# ()%V)
+  "m" : m_ptr ↦ {|
+                  memoize.Memoize.f' := func.nil;
+                  memoize.Memoize.results' := null
+                |}
   "Hm" : own_memoize m
            (λ x : w64,
               if decide (uint.Z x ≤ 3)
@@ -892,22 +891,20 @@ The little proof pattern below of using `iExactEq` is sometimes useful - it allo
   --------------------------------------∗
   WP exception_do
        (let: "$r0" := # m in
-        (do: # m_ptr <-[# memoize.Memoize] "$r0") ;;;
-        let: "y1" := alloc (type.zero_val (# uint64T)) in
+        (do: # m_ptr <-[memoize.Memoize] "$r0") ;;;
+        let: "y1" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
         let: "$r0" := let: "$a0" := # (W64 3) in
-                      method_call (# memoize.Memoize.id)
-                        (# "Call"%go) ![# memoize.Memoize]
+                      MethodResolve (go.PointerType memoize.Memoize) "Call"
                         (# m_ptr) "$a0" in
-        (do: "y1" <-[# uint64T] "$r0") ;;;
-        let: "y2" := alloc (type.zero_val (# uint64T)) in
+        (do: "y1" <-[go.uint64] "$r0") ;;;
+        let: "y2" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ()%V)) in
         let: "$r0" := let: "$a0" := # (W64 3) in
-                      method_call (# memoize.Memoize.id)
-                        (# "Call"%go) ![# memoize.Memoize]
+                      MethodResolve (go.PointerType memoize.Memoize) "Call"
                         (# m_ptr) "$a0" in
-        (do: "y2" <-[# uint64T] "$r0") ;;;
-        (do: (let: "$a0" := ![# uint64T] "y1" = ![# uint64T] "y2" in
-              func_call (# std.Assert) "$a0")) ;;;
-        return: # ())
+        (do: "y2" <-[go.uint64] "$r0") ;;;
+        (do: (let: "$a0" := ![go.uint64] "y1" =⟨go.uint64⟩ ![go.uint64] "y2" in
+              FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+        return: # ()%V)
   {{ v, Φ v }}
 ```
 
@@ -917,7 +914,9 @@ Here we come back from calling `NewMemoize`. As in `UseMemoize1`, all the hard w
 
 ```rocq
   wp_auto.
+  wp_method_call; wp_auto.
   wp_apply (wp_Memoize__Call with "[$Hm]") as "Hm".
+  wp_method_call; wp_auto.
   wp_apply (wp_Memoize__Call with "[$Hm]") as "Hm".
   wp_apply (wp_Assert).
   { rewrite bool_decide_eq_true_2 //. }

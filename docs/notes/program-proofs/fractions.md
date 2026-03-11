@@ -16,19 +16,19 @@ In GooseLang, the "basic points-to fact" is written with a type (the reasons are
 ```rocq
 Lemma read_spec (l: loc) (x: w64) :
   {{{ l ↦ x }}}
-    ![#uint64T] #l
+    ![go.uint64] #l
   {{{ RET #x; l ↦ x }}}.
 Proof.
-  wp_start as "H". wp_apply (wp_load_ty with "H"). (* NOTE: needed to strip later *)
+  wp_start as "H". wp_apply (wp_load with "H"). (* NOTE: needed to strip later *)
   iIntros "H". iApply "HΦ". iFrame.
 Qed.
 
 Lemma write_spec (l: loc) (x x': w64) :
   {{{ l ↦ x }}}
-    #l <-[#uint64T] #x'
+    #l <-[go.uint64] #x'
   {{{ RET #(); l ↦ x' }}}.
 Proof.
-  wp_start as "H". wp_apply (wp_store_ty with "H"). (* NOTE: needed to strip later *)
+  wp_start as "H". wp_pures. wp_apply (wp_store with "H"). (* NOTE: needed to strip later *)
   iIntros "H". iApply "HΦ". iFrame.
 Qed.
 
@@ -107,10 +107,10 @@ I said a fraction was `q ∈ (0, 1]`. This is realized with a custom type in Roc
 ```rocq
 Lemma read_frac_spec l (x: w64) (q: Qp) :
   {{{ l ↦{#q} x }}}
-    ![#uint64T] #l
+    ![go.uint64] #l
   {{{ RET #x; l ↦{#q} x }}}.
 Proof.
-  wp_start as "H". wp_apply (wp_load_ty with "H"). iIntros "H".
+  wp_start as "H". wp_apply (wp_load with "H"). iIntros "H".
   iApply "HΦ". iFrame.
 Qed.
 
@@ -170,7 +170,7 @@ Third, discarding the fraction involves an Iris "update", a change in ghost stat
 ```rocq
 Lemma alloc_ro_spec (x: w64) :
   {{{ True }}}
-    alloc #x
+    GoAlloc go.uint64 #x
   {{{ (l: loc), RET #l; l ↦□ x }}}.
 Proof.
   (* This proof is a bit odd because it's just a single allocation, so the
@@ -219,11 +219,11 @@ With a persistent permission, it's reasonable (and expected) that the permission
 ```rocq
 Lemma read_discarded_spec (l: loc) (x: w64) :
   {{{ l ↦□ x }}}
-    ![#uint64T] #l
+    ![go.uint64] #l
   {{{ RET #x; True }}}.
 Proof.
   wp_start as "#H".
-  wp_apply (wp_load_ty with "H"). iIntros "_".
+  wp_apply (wp_load with "H"). iIntros "_".
   iApply "HΦ". auto.
 Qed.
 

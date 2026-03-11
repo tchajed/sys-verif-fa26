@@ -680,7 +680,9 @@ All of these are easiest understood by seeing them in context; read on for an ex
 ```rocq
 Import sys_verif.program_proof.heap_init.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
@@ -757,66 +759,64 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
+  "HΦ" : True -∗ Φ (# ()%V)
   --------------------------------------∗
   WP exception_do
-       (let: "x" := alloc (zero_val intT) in
+       (let: "x" := GoAlloc go.int (# (W64 0)) in
         let: "$r0" := # (W64 0) in
-        (do: "x" <-[# intT] "$r0") ;;;
-        let: "y" := alloc (type.zero_val (# intT)) in
+        (do: "x" <-[go.int] "$r0") ;;;
+        let: "y" := GoAlloc go.int (GoZeroVal go.int (# ()%V)) in
         let: "$r0" := # (W64 42) in
-        (do: "y" <-[# intT] "$r0") ;;;
+        (do: "y" <-[go.int] "$r0") ;;;
         (do: (let: "$a0" := "x" in
-              let: "$a1" := "y" in func_call (# heap.IgnoreOne) "$a0" "$a1")) ;;;
-        (do: (let: "$a0" := ![# intT] "x" = ![# intT] "y" in
-              func_call (# std.Assert) "$a0")) ;;;
-        return: # ())
+              let: "$a1" := "y" in
+              FuncResolve heap.IgnoreOne [] (# ()%V) "$a0" "$a1")) ;;;
+        (do: (let: "$a0" := ![go.int] "x" =⟨go.int⟩ ![go.int] "y" in
+              FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+        return: # ()%V)
   {{ v, Φ v }}
 ```
 
 ::::
-
-```rocq
-  rewrite -default_val_eq_zero_val. (* only for demo; needed due to using iApply wp_alloc below *)
-
-```
 
 The next step in the proof outline is this call to `ref_to`, which allocates.
 
 Formally, the proof proceeds by applying the bind rule (to split the program into `alloc #(default_val w64)` and the rest of the code that uses this value). We can use an IPM tactic to automate this process, in particular identifying the context `K` in the bind rule.
 
 ```rocq
-  wp_bind (alloc #(default_val w64))%E.
+  wp_bind (GoAlloc go.int #(W64 0))%E.
 ```
 
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
+  "HΦ" : True -∗ Φ (# ()%V)
   --------------------------------------∗
-  WP alloc (# (default_val w64))
+  WP GoAlloc go.int (# (W64 0))
   {{ v,
      WP exception_do
           (let: "x" := v in
            let: "$r0" := # (W64 0) in
-           (do: "x" <-[# intT] "$r0") ;;;
-           let: "y" := alloc (type.zero_val (# intT)) in
+           (do: "x" <-[go.int] "$r0") ;;;
+           let: "y" := GoAlloc go.int (GoZeroVal go.int (# ()%V)) in
            let: "$r0" := # (W64 42) in
-           (do: "y" <-[# intT] "$r0") ;;;
+           (do: "y" <-[go.int] "$r0") ;;;
            (do: (let: "$a0" := "x" in
                  let: "$a1" := "y" in
-                 func_call (# heap.IgnoreOne) "$a0" "$a1")) ;;;
-           (do: (let: "$a0" := ![# intT] "x" = ![# intT] "y" in
-                 func_call (# std.Assert) "$a0")) ;;;
-           return: # ())
+                 FuncResolve heap.IgnoreOne [] (# ()%V) "$a0" "$a1")) ;;;
+           (do: (let: "$a0" := ![go.int] "x" =⟨go.int⟩ ![go.int] "y" in
+                 FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+           return: # ()%V)
      {{ v, Φ v }} }}
 ```
 
@@ -834,25 +834,13 @@ The next step you'd expect is that we need to use the rule of consequence to pro
 
 ```txt
 wp_alloc
-     : ∀ (v : ?V) (stk : stuckness) (E : coPset) (Φ0 : val → iPropI Σ),
-         True -∗
-         ▷ (∀ l : loc, l ↦ v -∗ Φ0 (# l)) -∗
-         WP alloc (# v) @ stk; E {{ v, Φ0 v }}
-where
-?V :
-  [Σ : gFunctors
-   hG : heapGS Σ
-   globalsGS0 : globalsGS Σ
-   go_ctx : GoContext
-   Φ : val → iPropI Σ
-  |- Type]
-?IntoVal0 :
-  [Σ : gFunctors
-   hG : heapGS Σ
-   globalsGS0 : globalsGS Σ
-   go_ctx : GoContext
-   Φ : val → iPropI Σ
-  |- IntoVal ?V]
+     : ∀ (V : Type) (t : go.type) (ZeroVal0 : ZeroVal V)
+         (TypedPointsto0 : TypedPointsto V) (H : GoSemanticsFunctions),
+         IntoValTyped V t
+         → ∀ (s : stuckness) (E : coPset) (v : V) (Φ : val → iPropI Σ),
+             True -∗
+             ▷ (∀ l : loc, l ↦ v -∗ Φ (# l)) -∗
+             WP GoAlloc t (# v) @ s; E {{ v, Φ v }}
 ```
 
 ::::
@@ -878,29 +866,31 @@ At this point there is a `let:` binding which we need to apply the pure-step rul
 :::: info Goal diff
 
 ```txt
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   x : loc
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
-  "Hx" : x ↦ default_val w64
+  "HΦ" : True -∗ Φ (# ()%V)
+  "Hx" : x ↦ W64 0
   --------------------------------------∗
   WP exception_do
        (let: "x" := # x in // [!code --]
         let: "$r0" := # (W64 0) in // [!code --]
-        (do: "x" <-[# intT] "$r0") ;;; // [!code --]
-       ((do: # x <-[# intT] # (W64 0)) ;;; // [!code ++]
-        let: "y" := alloc (type.zero_val (# intT)) in
+        (do: "x" <-[go.int] "$r0") ;;; // [!code --]
+       ((do: GoStore go.int (# x, # (W64 0))%V) ;;; // [!code ++]
+        let: "y" := GoAlloc go.int (GoZeroVal go.int (# ()%V)) in
         let: "$r0" := # (W64 42) in
-        (do: "y" <-[# intT] "$r0") ;;;
+        (do: "y" <-[go.int] "$r0") ;;;
         (do: (let: "$a0" := "x" in // [!code --]
         (do: (let: "$a0" := # x in // [!code ++]
-              let: "$a1" := "y" in func_call (# heap.IgnoreOne) "$a0" "$a1")) ;;;
-        (do: (let: "$a0" := ![# intT] "x" = ![# intT] "y" in // [!code --]
-        (do: (let: "$a0" := ![# intT] (# x) = ![# intT] "y" in // [!code ++]
-              func_call (# std.Assert) "$a0")) ;;;
-        return: # ())
+              let: "$a1" := "y" in
+              FuncResolve heap.IgnoreOne [] (# ()%V) "$a0" "$a1")) ;;;
+        (do: (let: "$a0" := ![go.int] "x" =⟨go.int⟩ ![go.int] "y" in // [!code --]
+        (do: (let: "$a0" := ![go.int] (# x) =⟨go.int⟩ ![go.int] "y" in // [!code ++]
+              FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+        return: # ()%V)
   {{ v, Φ v }}
 ```
 
@@ -919,22 +909,23 @@ The IPM can automate all of the above for allocation, load, and store:
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   x, y : loc
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
+  "HΦ" : True -∗ Φ (# ()%V)
   "Hx" : x ↦ W64 0
   "Hy" : y ↦ W64 42
   --------------------------------------∗
-  WP # (func_callv heap.IgnoreOne) (# x) (# y)
+  WP @!heap.IgnoreOne (# x) (# y)
   {{ v,
      WP exception_do
           ((do: v) ;;;
-           (do: (let: "$a0" := ![# intT] (# x) = ![# intT] (# y) in
-                 func_call (# std.Assert) "$a0")) ;;;
-           return: # ())
+           (do: (let: "$a0" := ![go.int] (# x) =⟨go.int⟩ ![go.int] (# y) in
+                 FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+           return: # ()%V)
      {{ v, Φ v }} }}
 ```
 
@@ -949,6 +940,7 @@ You might think we should do `iApply wp_IgnoreOne`. Let's see what happens if we
 :::: info Goals
 
 ```txt title="goal 1"
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   x, y : loc
   ============================
@@ -958,21 +950,22 @@ You might think we should do `iApply wp_IgnoreOne`. Let's see what happens if we
 ```
 
 ```txt title="goal 2"
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   x, y : loc
   ============================
   _ : is_pkg_init heap
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
+  "HΦ" : True -∗ Φ (# ()%V)
   "Hx" : x ↦ W64 0
   "Hy" : y ↦ W64 42
   --------------------------------------∗
   ▷ (x ↦ W64 42 -∗
      WP exception_do
-          ((do: # ()) ;;;
-           (do: (let: "$a0" := ![# intT] (# x) = ![# intT] (# y) in
-                 func_call (# std.Assert) "$a0")) ;;;
-           return: # ())
+          ((do: # ()%V) ;;;
+           (do: (let: "$a0" := ![go.int] (# x) =⟨go.int⟩ ![go.int] (# y) in
+                 FuncResolve std.Assert [] (# ()%V) "$a0")) ;;;
+           return: # ()%V)
      {{ v, Φ v }})
 ```
 
@@ -998,6 +991,7 @@ The IPM provides several mechanisms for deciding on these splits. A _specializat
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
   Φ : val → iPropI Σ
   x, y : loc
   ============================
@@ -1041,7 +1035,7 @@ Definition f: val := λ: <>, #().
 Definition g: val := λ: "x", f "x";; #(W64 1).
 Definition h: val := λ: "l",
     let: "y" := g "l" in
-    ![#uint32T] "l";;
+    ![go.uint32] "l";;
     "y".
 
 Lemma wp_f l (x: w32) :
@@ -1050,7 +1044,6 @@ Lemma wp_f l (x: w32) :
   {{{ RET #(); l ↦ x }}}.
 Proof.
   wp_start as "l".
-  wp_call.
   iApply "HΦ".
 Admitted.
 
@@ -1060,7 +1053,6 @@ Lemma wp_g (l: loc) (x: w32) :
   {{{ (y: w64), RET #y; ⌜uint.Z y < 10⌝ ∗ l ↦ x }}}.
 Proof.
   wp_start as "l".
-  wp_call.
 Admitted.
 
 Lemma wp_h (l: loc) (x: w32) :

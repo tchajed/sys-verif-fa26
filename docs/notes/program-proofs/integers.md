@@ -10,7 +10,9 @@ shortTitle: Integers
 From sys_verif.program_proof Require Import prelude empty_ffi.
 From New.generatedproof.sys_verif_code Require Import functional.
 Section goose.
-Context `{hG: !heapGS Σ}.
+Context `{hG: !heapGS Σ} {sem : go.Semantics} {package_sem : functional.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
@@ -30,7 +32,7 @@ Eval simpl in (fun (x: w64) => #x).
 :::: note Output
 
 ```txt
-     = fun x : w64 => to_val x
+     = fun x : w64 => into_val x
      : forall _ : w64, val
 ```
 
@@ -69,56 +71,19 @@ This style of postcondition is common with integers: we say there exists a `z: w
 ```rocq
 Lemma wp_Add_bounded (x y: w64) :
   {{{ ⌜uint.Z x + uint.Z y < 2^64⌝ }}}
-    functional.Addⁱᵐᵖˡ #x #y
+    @! functional.Add #x #y
   {{{ (z: w64), RET #z; ⌜uint.Z z = (uint.Z x + uint.Z y)%Z⌝ }}}.
 Proof.
-  wp_start as "%Hbound". wp_call.
-  wp_alloc b_l as "b". wp_pures.
-  wp_alloc a_l as "a". wp_pures.
-  wp_load. wp_load. wp_pures.
-```
-
-:::: info Goal
-
-```txt
-  x, y : w64
-  Φ : val → iPropI Σ
-  Hbound : uint.Z x + uint.Z y < 2 ^ 64
-  b_l, a_l : loc
-  ============================
-  "HΦ" : ∀ z : w64, ⌜uint.Z z = (uint.Z x + uint.Z y)%Z⌝ -∗ Φ (# z)
-  "b" : b_l ↦ y
-  "a" : a_l ↦ x
-  --------------------------------------∗
-  Φ (# (word.add x y))
-```
-
-::::
-
-You can see in this goal that the specific word being returned is `word.add x y`.
-
-```rocq
-  iApply "HΦ".
-  iPureIntro.
-```
-
-:::: info Goal
-
-```txt
-  x, y : w64
-  Φ : val → iPropI Σ
-  Hbound : uint.Z x + uint.Z y < 2 ^ 64
-  b_l, a_l : loc
-  ============================
-  uint.Z (word.add x y) = uint.Z x + uint.Z y
-```
-
-::::
-
-This goal is only true because the sum doesn't overflow - in general `uint.Z (word.add x y) = (uint.Z x + uint.Z y) % 2^64`.
-
-```rocq
-  word.
+  wp_start as "%Hbound".
+  wp_auto. wp_end.
+  (* wp_alloc b_l as "b". wp_auto. *)
+  (* wp_alloc a_l as "a". wp_auto. *)
+  (* wp_load. wp_load. wp_auto. (* {GOAL} *) *)
+  (* (*| You can see in this goal that the specific word being returned is `word.add x y`. |*) *)
+  (* iApply "HΦ". *)
+  (* iPureIntro. (* {GOAL} *) *)
+  (* (*| This goal is only true because the sum doesn't overflow - in general `uint.Z (word.add x y) = (uint.Z x + uint.Z y) % 2^64`. |*) *)
+  (* word. *)
 Qed.
 
 ```
@@ -131,11 +96,7 @@ Lemma wp_Add_general (x y: w64) :
     functional.Addⁱᵐᵖˡ #x #y
   {{{ RET #(word.add x y); True }}}.
 Proof.
-  wp_start as "_". wp_call.
-  wp_alloc b_l as "b". wp_pures.
-  wp_alloc a_l as "a". wp_pures.
-  wp_load. wp_load. wp_pures.
-  iApply "HΦ". done.
+  wp_start as "_". wp_auto. wp_end.
 Qed.
 
 End goose.

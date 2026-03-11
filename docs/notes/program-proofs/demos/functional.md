@@ -21,7 +21,8 @@ From sys_verif.program_proof Require Import functional_init.
 
 Section proof.
   Context `{hG: heapGS Σ, !ffi_semantics _ _}.
-  Context `{!globalsGS Σ} {go_ctx: GoContext}.
+  Context {sem : go.Semantics} {package_sem : functional.Assumptions}.
+  Collection W := sem + package_sem. Set Default Proof Using "W".
 
   (** Even the simple Add function has one subtlety: integer overflow. We prove
   a spec for it that assumes there is no overflow. *)
@@ -32,7 +33,7 @@ Section proof.
   Proof.
     wp_start as "%Hoverflow".
     wp_auto.
-    wp_finish.
+    wp_end.
   Qed.
 
   (* The same proof, but carried out more manually. *)
@@ -46,11 +47,11 @@ Section proof.
     wp_func_call. wp_call.
 
     (* wp_auto: *)
-    wp_alloc b_l as "b"; wp_pures.
+    wp_alloc b_l as "b". wp_pures.
     wp_alloc a_l as "a"; wp_pures.
-    wp_load; wp_load; wp_pures.
+    wp_load; wp_load; wp_auto.
 
-    (* wp_finish: *)
+    (* wp_end: *)
     iApply "HΦ".
     iPureIntro.
     word.
@@ -63,7 +64,7 @@ Section proof.
   Proof.
     wp_start.
     wp_auto.
-    wp_finish.
+    wp_end.
   Qed.
 
   Lemma wp_Max (a b: w64) :
@@ -74,8 +75,8 @@ Section proof.
     wp_start.
     wp_auto.
     wp_if_destruct.
-    - wp_finish.
-    - wp_finish.
+    - wp_end.
+    - wp_end.
   Qed.
 
   Lemma wp_Midpoint (a b: w64) :
@@ -85,7 +86,7 @@ Section proof.
   Proof.
     wp_start as "%Hoverflow".
     wp_auto.
-    wp_finish.
+    wp_end.
   Qed.
 
   Lemma wp_Midpoint2 (a b: w64) :
@@ -96,8 +97,8 @@ Section proof.
     wp_start.
     wp_auto.
     wp_if_destruct.
-    - wp_finish.
-    - wp_finish.
+    - wp_end.
+    - wp_end.
   Qed.
 
   Lemma wp_Arith (a b: w64) :
@@ -108,11 +109,11 @@ Section proof.
     wp_start.
     wp_auto.
     wp_if_destruct.
-    - wp_finish.
+    - wp_end.
     - wp_apply wp_Midpoint2.
       iIntros "%c %Heq".
       wp_auto.
-      wp_finish.
+      wp_end.
   Qed.
 
   Lemma wp_SumN (n: w64) :
@@ -120,7 +121,7 @@ Section proof.
       @! functional.SumN #n
     {{{ (m: w64), RET #m;
         ⌜uint.Z m = uint.Z n * (uint.Z n + 1) / 2⌝ }}}.
-  Proof.
+  Proof using W.
     wp_start as "%Hn_bound".
     wp_auto.
 
@@ -134,7 +135,7 @@ Section proof.
     wp_for "HI".
     wp_if_destruct.
     - wp_for_post.
-      wp_finish.
+      wp_end.
       iPureIntro.
       assert (uint.Z i = (uint.Z n + 1)%Z) by word.
       word.

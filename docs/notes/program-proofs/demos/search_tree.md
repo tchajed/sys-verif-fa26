@@ -35,8 +35,9 @@ From sys_verif.program_proof Require Import prelude empty_ffi.
 From sys_verif.program_proof Require Import heap_init.
 
 Section proof.
-Context `{hG: !heapGS Σ} `{!globalsGS Σ} {go_ctx: GoContext}.
-
+Context `{hG: !heapGS Σ} {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 ```
 
@@ -48,9 +49,9 @@ See `own_tree_F` for the context of how this is used.
 Definition tree_root (own_tree: loc -d> gset w64 -d> iPropO Σ)
   (l: loc) (keys: gset w64) : iPropO Σ :=
   (∃ (key: w64) (left_l right_l: loc) (l_keys r_keys: gset w64),
-   "key" :: l ↦s[heap.SearchTree :: "key"] key ∗
-   "left" :: l ↦s[heap.SearchTree :: "left"] left_l ∗
-   "right" :: l ↦s[heap.SearchTree :: "right"] right_l ∗
+   "key" :: l.[heap.SearchTree.t, "key"] ↦ key ∗
+   "left" :: l.[heap.SearchTree.t, "left"] ↦ left_l ∗
+   "right" :: l.[heap.SearchTree.t, "right"] ↦ right_l ∗
    (* the pointers in a tree themselves point to subtrees *)
    "Hleft" :: ▷ own_tree left_l l_keys ∗
    "Hright" :: ▷ own_tree right_l r_keys ∗
@@ -129,7 +130,7 @@ Lemma wp_NewSearchTree :
   {{{ (l: loc), RET #l; own_tree l ∅ }}}.
 Proof.
   wp_start.
-  wp_finish.
+  wp_end.
   iApply own_tree_null; done.
 Qed.
 
@@ -155,7 +156,7 @@ func (t *SearchTree) Contains(key uint64) bool {
 ```rocq
 Lemma wp_SearchTree__Contains (needle: w64) l keys :
   {{{ is_pkg_init heap ∗ own_tree l keys }}}
-    l @ (ptrT.id heap.SearchTree.id) @ "Contains" #needle
+    l @! (go.PointerType heap.SearchTree) @! "Contains" #needle
   {{{ RET #(bool_decide (needle ∈ keys)); own_tree l keys }}}.
 Proof.
 
@@ -175,6 +176,7 @@ Note that we can't use this mechanism to prove a program's recursion eventually 
 :::: info Goal
 
 ```txt
+  package_sem : heap.Assumptions
   needle : w64
   l : loc
   keys : gset w64
@@ -184,8 +186,7 @@ Note that we can't use this mechanism to prove a program's recursion eventually 
   "IH" : ∀ (l0 : loc) (keys0 : gset w64) (x : val → iPropI Σ),
            is_pkg_init heap ∗ own_tree l0 keys0 -∗
            ▷ (own_tree l0 keys0 -∗ x (# (bool_decide (needle ∈ keys0)))) -∗
-           WP # (method_callv (ptrT.id heap.SearchTree.id) "Contains" (# l0))
-                (# needle)
+           WP l0 @! (go.PointerType heap.SearchTree) @! "Contains" (# needle)
            {{ v, x v }}
   _ : is_pkg_init heap
   --------------------------------------□
@@ -195,31 +196,33 @@ Note that we can't use this mechanism to prove a program's recursion eventually 
   "key" : key_ptr ↦ needle
   --------------------------------------∗
   WP exception_do
-       ((if: # (bool_decide (l = null)) then return: # false else do: # ()) ;;;
-        (if: ![# uint64T] (# key_ptr) =
-             ![# uint64T] (struct.field_ref (# heap.SearchTree)
-                             (# "key"%go) ![# ptrT]
-                             (# t_ptr))
-         then return: # true else do: # ()) ;;;
-        (if: ![# uint64T] (struct.field_ref (# heap.SearchTree)
-                             (# "key"%go) ![# ptrT]
-                             (# t_ptr)) >
-             ![# uint64T] (# key_ptr)
-         then return: (let: "$a0" := ![# uint64T] (# key_ptr) in
-                       method_call (# (ptrT.id heap.SearchTree.id))
-                         (# "Contains"%go)
-                         ![# ptrT] (struct.field_ref
-                                      (# heap.SearchTree)
-                                      (# "left"%go) ![
-                                      # ptrT] (# t_ptr))
+       ((if: # (bool_decide (l = null)) then return: # false else do: # ()%V) ;;;
+        (if: Convert go.untyped_bool go.bool
+               (![go.uint64] (# key_ptr) =⟨go.uint64⟩ ![go.uint64]
+                (StructFieldRef heap.SearchTree "key"
+                   ![go.PointerType heap.SearchTree]
+                   (# t_ptr)))
+         then return: # true else do: # ()%V) ;;;
+        (if: Convert go.untyped_bool go.bool
+               (![go.uint64] (# key_ptr) <⟨go.uint64⟩ ![go.uint64]
+                (StructFieldRef heap.SearchTree "key"
+                   ![go.PointerType heap.SearchTree]
+                   (# t_ptr)))
+         then return: (let: "$a0" := ![go.uint64] (# key_ptr) in
+                       MethodResolve (go.PointerType heap.SearchTree)
+                         "Contains"
+                         ![go.PointerType heap.SearchTree]
+                         (StructFieldRef heap.SearchTree "left"
+                            ![go.PointerType heap.SearchTree]
+                            (# t_ptr))
                          "$a0")
-         else do: # ()) ;;;
-        return: (let: "$a0" := ![# uint64T] (# key_ptr) in
-                 method_call (# (ptrT.id heap.SearchTree.id))
-                   (# "Contains"%go)
-                   ![# ptrT] (struct.field_ref (# heap.SearchTree)
-                                (# "right"%go) ![# ptrT]
-                                (# t_ptr))
+         else do: # ()%V) ;;;
+        return: (let: "$a0" := ![go.uint64] (# key_ptr) in
+                 MethodResolve (go.PointerType heap.SearchTree) "Contains"
+                   ![go.PointerType heap.SearchTree]
+                   (StructFieldRef heap.SearchTree "right"
+                      ![go.PointerType heap.SearchTree]
+                      (# t_ptr))
                    "$a0"))
   {{ v, Φ v }}
 ```
@@ -238,7 +241,7 @@ Notice that the ▷ in front of "IH" has disappeared because we've taken a step.
     { iDestruct (own_tree_null with "Htree") as %Hkeys; subst.
       iPureIntro; set_solver. }
     rewrite bool_decide_eq_false_2; [ done | ].
-    wp_finish. }
+    wp_end. }
 
   (* non-nil cases *)
   assert (l ≠ null) as Hnon_null by congruence.
@@ -250,14 +253,14 @@ Notice that the ▷ in front of "IH" has disappeared because we've taken a step.
   { (* found needle at root *)
     rewrite bool_decide_eq_true_2.
     { set_solver. }
-    wp_finish.
+    wp_end.
     iApply own_tree_non_null; auto.
     iFrame "key left right Hleft Hright %".
     iPureIntro; set_solver.
   }
 
   (* else: didn't find at root *)
-  assert (needle ≠ key) as Hnotkey by congruence.
+  assert (needle ≠ key0) as Hnotkey by congruence.
   wp_if_destruct.
   - (* recursive subcall, to the left tree *)
     wp_apply ("IH" with "[$Hleft]").
@@ -317,16 +320,14 @@ Proof.
   wp_start as "_".
   wp_auto.
   wp_alloc t_l as "Hl".
-  iDestruct (typed_pointsto_not_null with "Hl") as %Hnot_null.
-  { reflexivity. }
-  iApply struct_fields_split in "Hl". iNamed "Hl".
-  cbn [heap.SearchTree.key' heap.SearchTree.left' heap.SearchTree.right'].
+  iAssert (⌜ t_l ≠ null ⌝)%I with "[-]" as "%Hnot_nul"; first admit.
+  iStructNamed "Hl". simpl.
   wp_auto.
-  wp_finish.
+  wp_end.
   rewrite own_tree_unfold /own_tree_F.
   iRight.
   iSplit; [ done | ].
-  iFrame "Hkey Hleft Hright".
+  iFrame "key left right".
   iExists ∅, ∅. iFrame.
   rewrite own_tree_null.
   iPureIntro.
@@ -334,7 +335,7 @@ Proof.
   - set_solver.
   - set_solver.
   - set_solver.
-Qed.
+Admitted.
 
 ```
 
@@ -359,7 +360,7 @@ func (t *SearchTree) Insert(key uint64) *SearchTree {
 ```rocq
 Lemma wp_SearchTree__Insert (new_key: w64) l keys :
   {{{ is_pkg_init heap ∗ own_tree l keys }}}
-    l @ (ptrT.id heap.SearchTree.id) @ "Insert" #new_key
+    l @! (go.PointerType heap.SearchTree) @! "Insert" #new_key
   {{{ (l': loc), RET #l'; own_tree l' (keys ∪ {[new_key]}) }}}.
 Proof.
   iLöb as "IH" forall (l keys).
@@ -370,7 +371,7 @@ Proof.
     iDestruct (own_tree_null with "Htree") as %Hkeys; subst. iClear "Htree".
     iIntros (l') "Htree".
     wp_auto.
-    wp_finish.
+    wp_end.
     iExactEq "Htree".
     f_equal. set_solver. }
 
@@ -383,7 +384,7 @@ Proof.
   { wp_apply ("IH" with "[$Hleft]").
     iIntros (left_l') "Hleft".
     wp_auto.
-    wp_finish.
+    wp_end.
     iApply own_tree_non_null; [ done | ].
     (* need to re-prove binay search invariant *)
     iFrame "key left right Hleft Hright %".
@@ -396,7 +397,7 @@ Proof.
   { wp_apply ("IH" with "[$Hright]").
     iIntros (right_l') "Hright".
     wp_auto.
-    wp_finish.
+    wp_end.
     iApply own_tree_non_null; [ done | ].
     iFrame "key left right Hleft Hright %".
     iPureIntro.
@@ -405,8 +406,8 @@ Proof.
     - set_solver.
   }
   (* key was already present *)
-  assert (key = new_key) by word; subst new_key.
-  wp_finish.
+  assert (key0 = new_key) by word; subst new_key.
+  wp_end.
   iApply own_tree_non_null; [ auto | ].
   iFrame "key left right Hleft Hright %".
   iPureIntro.

@@ -129,7 +129,7 @@ Lemma wp_JoinHandle__Join (l: loc) (Q: iProp Σ) :
   {{{ RET #(); Q }}}
 ```
 
-The proof of this specification boils down to a careful choice of the lock invariant for the mutex in a `JoinHandle`. The lock invariant used in the proof is `∃ (done_b: bool), l ↦s[JoinHandle :: "done"] done_b ∗ (if done_b then P else True)`. What makes this work is that in `Join()`, if we discover that the thread has finished, the code sets `done` back to false, so the proof can extract the `P` in the lock invariant and restore it with merely `True`.
+The proof of this specification boils down to a careful choice of the lock invariant for the mutex in a `JoinHandle`. The lock invariant used in the proof is `∃ (done_b: bool), l.[JoinHandle.t, "done"] ↦ done_b ∗ (if done_b then P else True)`. What makes this work is that in `Join()`, if we discover that the thread has finished, the code sets `done` back to false, so the proof can extract the `P` in the lock invariant and restore it with merely `True`.
 
 The barrier specification builds on the core idea of Spawn and Join.
 
@@ -267,19 +267,17 @@ From sys_verif.program_proof Require Import prelude empty_ffi.
 From sys_verif.program_proof Require Import concurrent_init.
 From sys_verif.program_proof Require Import demos.barrier_proof.
 
-From Perennial.algebra Require Import ghost_var.
+From New.ghost Require Import dghost_var.
 
 Open Scope Z_scope.
 
 Section proof.
-  Context `{hG: !heapGS Σ} `{!globalsGS Σ} {go_ctx: GoContext}.
-  Context `{ghost_varG0: ghost_varG Σ Z}.
-  Context `{barrierG0: barrier.barrierG Σ}.
+  Context `{hG: !heapGS Σ} {sem : go.Semantics} {package_sem : concurrent.Assumptions}.
 
   Definition lock_inv γ1 γ2 l : iProp _ :=
     ∃ (x: w64) (x1 x2: Z),
-      "Hx1" :: ghost_var γ1 (DfracOwn (1/2)) x1 ∗
-      "Hx2" :: ghost_var γ2 (DfracOwn (1/2)) x2 ∗
+      "Hx1" :: dghost_var γ1 (DfracOwn (1/2)) x1 ∗
+      "Hx2" :: dghost_var γ2 (DfracOwn (1/2)) x2 ∗
       "x" ∷ l ↦ x ∗
       "%Hsum" ∷ ⌜uint.Z x = (x1 + x2)%Z⌝.
 
@@ -289,8 +287,8 @@ Section proof.
     {{{ (x: w64), RET #x; ⌜uint.Z x = 4⌝ }}}.
   Proof using All.
     wp_start as "_".
-    iMod (ghost_var_alloc 0) as (γ1) "[Hv1_1 Hx1_2]".
-    iMod (ghost_var_alloc 0) as (γ2) "[Hv2_1 Hx2_2]".
+    iMod (dghost_var_alloc 0) as (γ1) "[Hv1_1 Hx1_2]".
+    iMod (dghost_var_alloc 0) as (γ2) "[Hv2_1 Hx2_2]".
     wp_auto.
     wp_alloc mu_l as "Hmu".
     wp_auto.
@@ -299,9 +297,9 @@ Section proof.
     wp_apply (barrier.wp_New).
     iIntros (l γ_b) "[#Hbar Hdone]". wp_auto.
     iPersist "m b".
-    wp_apply (barrier.wp_Barrier__Add1 (ghost_var γ1 (DfracOwn (1/2)) 2) with "[$Hbar $Hdone]").
+    wp_apply (barrier.wp_Barrier__Add1 (dghost_var γ1 (DfracOwn (1/2)) 2) with "[$Hbar $Hdone]").
     iIntros "[Hsend1 Hdone]". wp_auto.
-    wp_apply (barrier.wp_Barrier__Add1 (ghost_var γ2 (DfracOwn (1/2)) 2) with "[$Hbar $Hdone]").
+    wp_apply (barrier.wp_Barrier__Add1 (dghost_var γ2 (DfracOwn (1/2)) 2) with "[$Hbar $Hdone]").
     iIntros "[Hsend2 Hdone]". wp_auto.
     wp_bind (Fork _).
     iApply (wp_fork with "[Hx1_2 Hsend1]").
@@ -311,8 +309,8 @@ Section proof.
       wp_auto.
       wp_apply (std.wp_SumAssumeNoOverflow). iIntros "%Hoverflow".
       wp_auto.
-      iDestruct (ghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
-      iMod (ghost_var_update_2 2 with "Hx1_2 Hx1") as "[Hx1_2 Hx1]".
+      iDestruct (dghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
+      iMod (dghost_var_update_2 2 with "Hx1_2 Hx1") as "[Hx1_2 Hx1]".
       { rewrite dfrac_op_own Qp.half_half //. }
       wp_apply (wp_Mutex__Unlock with "[$Hlock $locked Hx1 Hx2 x]").
       { iFrame. iPureIntro.  word. }
@@ -329,8 +327,8 @@ Section proof.
       wp_auto.
       wp_apply (std.wp_SumAssumeNoOverflow). iIntros "%Hoverflow".
       wp_auto.
-      iDestruct (ghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
-      iMod (ghost_var_update_2 2 with "Hx2_2 Hx2") as "[Hx2_2 Hx2]".
+      iDestruct (dghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
+      iMod (dghost_var_update_2 2 with "Hx2_2 Hx2") as "[Hx2_2 Hx2]".
       { rewrite dfrac_op_own Qp.half_half //. }
       wp_apply (wp_Mutex__Unlock with "[$Hlock $locked Hx1 Hx2 x]").
       { iFrame. iPureIntro.  word. }
@@ -345,8 +343,8 @@ Section proof.
     iIntros "[Hdone Hrecv]". iDestruct "Hdone" as "((_ & Hx1_2) & Hx2_2)".
     wp_auto.
     wp_apply (wp_Mutex__Lock with "[$Hlock]"). iIntros "[locked Hinv]". iNamed "Hinv".
-    iDestruct (ghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
-    iDestruct (ghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
+    iDestruct (dghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
+    iDestruct (dghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
     wp_auto.
     wp_apply (wp_Mutex__Unlock with "[$Hlock $locked $x $Hx1 $Hx2]").
     { iPureIntro. word. }

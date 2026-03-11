@@ -133,12 +133,14 @@ From sys_verif.program_proof Require Import prelude empty_ffi.
 From New.proof Require Import std sync.
 From New.generatedproof.sys_verif_code Require Import concurrent.
 From sys_verif.program_proof Require Import concurrent_init.
-From Perennial.algebra Require Import ghost_var.
+From New.ghost Require Import all dghost_var.
 
 Section goose.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
-Context `{ghost_varG0: ghost_varG Σ Z}.
+Context {sem : go.Semantics} {package_sem : concurrent.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
+
 Open Scope Z_scope.
 
 ```
@@ -150,20 +152,19 @@ The first example we'll see is so-called "plain" ghost variables. These aren't q
 The library hides the literal `own` construct in Iris behind some sealing machinery. Despite this, we can still print its definition with the following:
 
 ```rocq
-Print ghost_var.ghost_var_def.
+Print dghost_var.dghost_var_def.
 ```
 
 :::: note Output
 
 ```txt
-ghost_var.ghost_var_def =
-λ (Σ : gFunctors) (A : Type) (ghost_varG0 : ghost_varG Σ A)
-  (γ : gname) (dq : dfrac) (a : A), own γ (dfrac_agree.to_dfrac_agree dq a)
-     : ∀ {Σ : gFunctors} {A : Type},
-         ghost_varG Σ A → gname → dfrac → A → iProp Σ
+dghost_var.dghost_var_def =
+λ (Σ : gFunctors) (allG0 : allG Σ) (A : Type) (γ : gname)
+  (dq : dfrac) (a : A), own γ (to_dfrac_agree dq a)
+     : ∀ {Σ : gFunctors}, allG Σ → ∀ {A : Type}, gname → dfrac → A → iProp Σ
 
-Arguments ghost_var.ghost_var_def {Σ} {A}%type_scope
-  {ghost_varG0} γ dq%dfrac_scope a
+Arguments dghost_var.dghost_var_def {Σ allG0} {A}%_type_scope
+  γ dq%_dfrac_scope a
 ```
 
 ::::
@@ -173,14 +174,14 @@ The actual value passed to `own` uses `dfrac_agree.to_frac_agree`, which constru
 ---
 
 ```rocq
-Lemma ghost_var_change_ex1 γ :
-  ghost_var γ (DfracOwn 1) 7%Z -∗ |==> ghost_var γ (DfracOwn 1) 23%Z.
+Lemma dghost_var_change_ex1 γ :
+  dghost_var γ 1 7%Z -∗ |==> dghost_var γ 1 23%Z.
 Proof.
   iIntros "H".
   (* We use `iMod` to "execute" a ghost update. This is only legal because the
   goal allows it, which is true for a goal that starts with `|==>` (as we have
   here) or a WP goal. *)
-  iMod (ghost_var_update 23%Z with "H") as "H".
+  iMod (dghost_var_update 23%Z with "H") as "H".
   (* _After_ we're done doing ghost updates, we can remove the update modality
   from the goal with iModIntro. *)
   iModIntro.
@@ -189,18 +190,18 @@ Qed.
 
 ```
 
-Here's a special case allocation lemma for this particular type of ghost state. (I'm using `@ghost_var_alloc Σ` rather than `ghost_var_alloc` to reduce some noise in the output.)
+Here's a special case allocation lemma for this particular type of ghost state. (I'm using `@dghost_var_alloc Σ` rather than `dghost_var_alloc` to reduce some noise in the output.)
 
 ```rocq
-Check (@ghost_var_alloc Σ).
+Check (@dghost_var_alloc Σ).
 ```
 
 :::: note Output
 
 ```txt
-@ghost_var_alloc Σ
-     : ∀ (A : Type) (ghost_varG0 : ghost_varG Σ A) (a : A),
-         ⊢ |==> ∃ γ : gname, ghost_var γ (DfracOwn 1) a
+@dghost_var_alloc Σ
+     : ∀ (allG0 : allG Σ) (A : Type) (a : A),
+         ⊢ |==> ∃ γ : gname, dghost_var γ (DfracOwn 1) a
 ```
 
 ::::
@@ -253,16 +254,15 @@ For this discussion there are two salient aspects of dfrac composition:
 The first is the "discard" part of discardable fractions, and it means we have the following ghost update:
 
 ```rocq
-Check (@ghost_var_persist Σ).
+Check (@dghost_var_persist Σ).
 ```
 
 :::: note Output
 
 ```txt
-@ghost_var_persist Σ
-     : ∀ (A : Type) (ghost_varG0 : ghost_varG Σ A)
-         (γ : gname) (q : Qp) (a : A),
-         ghost_var γ (DfracOwn q) a ==∗ ghost_var γ DfracDiscarded a
+@dghost_var_persist Σ
+     : ∀ (allG0 : allG Σ) (A : Type) (γ : gname) (q : Qp) (a : A),
+         dghost_var γ (DfracOwn q) a ==∗ dghost_var γ DfracDiscarded a
 ```
 
 ::::
@@ -270,18 +270,9 @@ Check (@ghost_var_persist Σ).
 The second property about persistence is what makes discardable fractions especially useful:
 
 ```rocq
-Check (@ghost_var_persistent Σ).
+(* Check (@dghost_var_persistent Σ). (* {OUTPUT} *) *)
+
 ```
-
-:::: note Output
-
-```txt
-@ghost_var_persistent Σ
-     : ∀ (A : Type) (ghost_varG0 : ghost_varG Σ A) (γ : gname) (a : A),
-         Persistent (ghost_var γ DfracDiscarded a)
-```
-
-::::
 
 ### Proof of the ParallelAdd example
 
@@ -298,8 +289,8 @@ We also maintain that both ghost variables are less than 2 so that we can prove 
 ```rocq
 Definition lock_inv γ1 γ2 l : iProp _ :=
   ∃ (x: w64) (x1 x2: Z),
-    "Hx1" :: ghost_var γ1 (DfracOwn (1/2)) x1 ∗
-    "Hx2" :: ghost_var γ2 (DfracOwn (1/2)) x2 ∗
+    "Hx1" :: dghost_var γ1 (DfracOwn (1/2)) x1 ∗
+    "Hx2" :: dghost_var γ2 (DfracOwn (1/2)) x2 ∗
     "x" ∷ l ↦ x ∗
     "%Hsum" ∷ ⌜x1 ≤ 2 ∧ x2 ≤ 2 ∧ uint.Z x = (x1 + x2)%Z⌝.
 
@@ -309,8 +300,8 @@ Lemma wp_ParallelAdd3 :
   {{{ (x: w64), RET #x; ⌜uint.Z x = 4⌝ }}}.
 Proof using All.
   wp_start as "_".
-  iMod (ghost_var_alloc 0) as (γ1) "[Hv1_1 Hx1_2]".
-  iMod (ghost_var_alloc 0) as (γ2) "[Hv2_1 Hx2_2]".
+  iMod (dghost_var_alloc 0) as (γ1) "[Hv1_1 Hx1_2]".
+  iMod (dghost_var_alloc 0) as (γ2) "[Hv2_1 Hx2_2]".
   wp_auto.
   wp_alloc m_l as "Hm".
   wp_auto.
@@ -323,7 +314,7 @@ Proof using All.
 :::: info Goal
 
 ```txt
-  ghost_varG0 : ghost_varG Σ Z
+  package_sem : concurrent.Assumptions
   Φ : val → iPropI Σ
   γ1, γ2 : gname
   m_ptr, m_l, i_ptr, h1_ptr : loc
@@ -332,76 +323,75 @@ Proof using All.
   "Hlock" : is_Mutex m_l (lock_inv γ1 γ2 i_ptr)
   --------------------------------------□
   "HΦ" : ∀ x : w64, ⌜uint.Z x = 4⌝ -∗ Φ (# x)
-  "Hx1_2" : ghost_var γ1 (DfracOwn (1 / 2)) 0
-  "Hx2_2" : ghost_var γ2 (DfracOwn (1 / 2)) 0
+  "Hx1_2" : dghost_var γ1 (DfracOwn (1 / 2)) 0
+  "Hx2_2" : dghost_var γ2 (DfracOwn (1 / 2)) 0
   "m" : m_ptr ↦ m_l
-  "h1" : h1_ptr ↦ default_val loc
+  "h1" : h1_ptr ↦ null
   --------------------------------------∗
   WP exception_do
-       (let: "$r0" := # (func_callv std.Spawn)
+       (let: "$r0" := @!std.Spawn
                         (#
                            {|
                              func.f := <>;
                              func.x := <>;
                              func.e :=
                                exception_do
-                                 ((do: method_call
-                                         (# (ptrT.id sync.Mutex.id))
-                                         (# "Lock"%go) ![
-                                         # ptrT] (# m_ptr)
+                                 ((do: MethodResolve
+                                         (go.PointerType sync.Mutex) "Lock"
+                                         ![go.PointerType sync.Mutex]
+                                         (# m_ptr)
                                          (# ())) ;;;
-                                  (do: # i_ptr <-[
-                                       # uint64T]
-                                       ![# uint64T]
-                                       (# i_ptr) +
+                                  (do: # i_ptr <-[go.uint64] ![go.uint64]
+                                       (# i_ptr) +⟨go.uint64⟩
                                        # (W64 2)) ;;;
-                                  (do: method_call
-                                         (# (ptrT.id sync.Mutex.id))
-                                         (# "Unlock"%go) ![
-                                         # ptrT] (# m_ptr)
+                                  (do: MethodResolve
+                                         (go.PointerType sync.Mutex) "Unlock"
+                                         ![go.PointerType sync.Mutex]
+                                         (# m_ptr)
                                          (# ())) ;;;
                                   return: # ())
                            |}) in
-        (do: # h1_ptr <-[# ptrT] "$r0") ;;;
-        let: "h2" := alloc (type.zero_val (# ptrT)) in
+        (do: # h1_ptr <-[go.PointerType std.JoinHandle] "$r0") ;;;
+        let: "h2" := GoAlloc (go.PointerType std.JoinHandle)
+                       (GoZeroVal (go.PointerType std.JoinHandle) (# ())) in
         let: "$r0" := let: "$a0" := λ: <>,
                                       exception_do
-                                        ((do: method_call
-                                                (# (ptrT.id sync.Mutex.id))
-                                                (# "Lock"%go)
+                                        ((do: MethodResolve
+                                                (go.PointerType sync.Mutex)
+                                                "Lock"
                                                 ![
-                                                # ptrT]
+                                                go.PointerType sync.Mutex]
                                                 (# m_ptr)
                                                 (# ())) ;;;
-                                         (do: # i_ptr <-[
-                                              # uint64T]
-                                              ![# uint64T]
-                                              (# i_ptr) +
+                                         (do: # i_ptr <-[go.uint64] ![go.uint64]
+                                              (# i_ptr) +⟨go.uint64⟩
                                               # (W64 2)) ;;;
-                                         (do: method_call
-                                                (# (ptrT.id sync.Mutex.id))
-                                                (# "Unlock"%go)
+                                         (do: MethodResolve
+                                                (go.PointerType sync.Mutex)
+                                                "Unlock"
                                                 ![
-                                                # ptrT]
+                                                go.PointerType sync.Mutex]
                                                 (# m_ptr)
                                                 (# ())) ;;;
                                          return: # ()) in
-                      func_call (# std.Spawn) "$a0" in
-        (do: "h2" <-[# ptrT] "$r0") ;;;
-        (do: method_call (# (ptrT.id std.JoinHandle.id))
-               (# "Join"%go) ![# ptrT] (# h1_ptr)
+                      FuncResolve std.Spawn [] (# ()) "$a0" in
+        (do: "h2" <-[go.PointerType std.JoinHandle] "$r0") ;;;
+        (do: MethodResolve (go.PointerType std.JoinHandle) "Join"
+               ![go.PointerType std.JoinHandle] (# h1_ptr)
                (# ())) ;;;
-        (do: method_call (# (ptrT.id std.JoinHandle.id))
-               (# "Join"%go) ![# ptrT] "h2" (# ())) ;;;
-        (do: method_call (# (ptrT.id sync.Mutex.id))
-               (# "Lock"%go) ![# ptrT] (# m_ptr) (# ())) ;;;
-        let: "y" := alloc (type.zero_val (# uint64T)) in
-        let: "$r0" := ![# uint64T] (# i_ptr) in
-        (do: "y" <-[# uint64T] "$r0") ;;;
-        (do: method_call (# (ptrT.id sync.Mutex.id))
-               (# "Unlock"%go) ![# ptrT] (# m_ptr)
+        (do: MethodResolve (go.PointerType std.JoinHandle) "Join"
+               ![go.PointerType std.JoinHandle] "h2"
                (# ())) ;;;
-        return: ![# uint64T] "y")
+        (do: MethodResolve (go.PointerType sync.Mutex) "Lock"
+               ![go.PointerType sync.Mutex] (# m_ptr)
+               (# ())) ;;;
+        let: "y" := GoAlloc go.uint64 (GoZeroVal go.uint64 (# ())) in
+        let: "$r0" := ![go.uint64] (# i_ptr) in
+        (do: "y" <-[go.uint64] "$r0") ;;;
+        (do: MethodResolve (go.PointerType sync.Mutex) "Unlock"
+               ![go.PointerType sync.Mutex] (# m_ptr)
+               (# ())) ;;;
+        return: ![go.uint64] "y")
   {{ v, Φ v }}
 ```
 
@@ -412,14 +402,14 @@ Observe here that the `init_Mutex` above has consumed the plain mutex value and 
 ```rocq
   iPersist "m".
 
-  wp_apply (wp_Spawn (ghost_var γ1 (DfracOwn (1/2)) 2) with "[Hx1_2]").
+  wp_apply (wp_Spawn (dghost_var γ1 (DfracOwn (1/2)) 2) with "[Hx1_2]").
   { clear Φ.
     iIntros (Φ) "HΦ".
     wp_auto.
     wp_apply (wp_Mutex__Lock with "[$Hlock]"). iIntros "[locked Hinv]". iNamed "Hinv".
     wp_auto.
-    iDestruct (ghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
-    iMod (ghost_var_update_2 2 with "Hx1_2 Hx1") as "[Hx1_2 Hx1]".
+    iDestruct (dghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
+    iMod (dghost_var_update_2 2 with "Hx1_2 Hx1") as "[Hx1_2 Hx1]".
     { rewrite dfrac_op_own Qp.half_half //. }
     wp_apply (wp_Mutex__Unlock with "[-HΦ Hx1_2 $Hlock $locked]").
     { iFrame. iPureIntro. split_and!; try word. }
@@ -429,19 +419,18 @@ Observe here that the `init_Mutex` above has consumed the plain mutex value and 
   iIntros (h_1) "#Hjh1".
   wp_auto.
 
-  wp_apply (wp_Spawn (ghost_var γ2 (DfracOwn (1/2)) 2) with "[Hx2_2]").
+  wp_apply (wp_Spawn (dghost_var γ2 (DfracOwn (1/2)) 2) with "[Hx2_2]").
   { clear Φ.
     iIntros (Φ) "HΦ".
     wp_auto.
     wp_apply (wp_Mutex__Lock with "[$Hlock]"). iIntros "[locked Hinv]". iNamed "Hinv".
     wp_auto.
-    iDestruct (ghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
-    iMod (ghost_var_update_2 2 with "Hx2_2 Hx2") as "[Hx2_2 Hx2]".
+    iDestruct (dghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
+    iMod (dghost_var_update_2 2 with "Hx2_2 Hx2") as "[Hx2_2 Hx2]".
     { rewrite dfrac_op_own Qp.half_half //. }
     wp_apply (wp_Mutex__Unlock with "[-HΦ Hx2_2 $Hlock $locked]").
     { iFrame.
       iPureIntro. split_and!; try word. }
-    wp_pures.
     iApply "HΦ". iFrame.
   }
   iIntros (h_2) "#Hjh2".
@@ -452,8 +441,8 @@ Observe here that the `init_Mutex` above has consumed the plain mutex value and 
   wp_apply (wp_JoinHandle__Join with "[$Hjh2]").
   iIntros "Hx2_2". wp_auto.
   wp_apply (wp_Mutex__Lock with "[$Hlock]"). iIntros "[locked Hinv]". iNamed "Hinv".
-  iDestruct (ghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
-  iDestruct (ghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
+  iDestruct (dghost_var_agree with "Hx1_2 Hx1") as %Heq; subst.
+  iDestruct (dghost_var_agree with "Hx2_2 Hx2") as %Heq; subst.
   wp_auto.
   wp_apply (wp_Mutex__Unlock with "[$locked $Hlock Hx1 Hx2 x]").
   { iFrame. iPureIntro. split_and!; word. }

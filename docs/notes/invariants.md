@@ -80,7 +80,9 @@ From sys_verif.program_proof Require Import concurrent_init.
 
 Section goose.
 Context `{hG: !heapGS Σ}.
-Context `{!globalsGS Σ} {go_ctx: GoContext}.
+Context {sem : go.Semantics} {package_sem : concurrent.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 (*
 func SetX(x *uint64) {
@@ -119,22 +121,23 @@ Proof.
 :::: info Goal
 
 ```txt
+  package_sem : concurrent.Assumptions
   Φ : val → iPropI Σ
   x_ptr : loc
   ============================
   _ : is_pkg_init concurrent
   --------------------------------------□
-  "HΦ" : True -∗ Φ (# ())
+  "HΦ" : True -∗ Φ (# ()%V)
   "x" : x_ptr ↦ W64 1
   --------------------------------------∗
-  WP exception_do ((do: # ()) ;;;
-                   return: # ()) {{ v, Φ v }}
+  WP exception_do ((do: # ()%V) ;;;
+                   return: # ()%V) {{ v, Φ v }}
 ```
 
 ::::
 
 ```rocq
-  wp_pures.
+  wp_auto.
   iApply "HΦ". done.
 Qed.
 
@@ -157,13 +160,14 @@ Proof.
   specification for Fork is equivalent to the wp-spawn above, but is written in
   continuation-passing style. *)
   wp_apply (wp_fork with "[x]").
-  { wp_pures.
+  { wp_auto.
     wp_apply (wp_SetX with "[$x]"). iIntros "x".
 ```
 
 :::: info Goal
 
 ```txt
+  package_sem : concurrent.Assumptions
   Φ : val → iPropI Σ
   x_ptr : loc
   ============================
@@ -171,17 +175,16 @@ Proof.
   --------------------------------------□
   "x" : x_ptr ↦ W64 1
   --------------------------------------∗
-  WP exception_do ((do: # ()) ;;;
-                   return: # ()) {{ _, True }}
+  WP exception_do ((do: # ()%V) ;;;
+                   return: # ()%V) {{ _, True }}
 ```
 
 ::::
 
 ```rocq
-    wp_pures.
+    wp_auto.
     done.
   }
-  wp_pures.
   iApply "HΦ". done.
 Qed.
 
@@ -253,52 +256,9 @@ Lemma wp_FirstLock_v1 :
   {{{ (y: w64), RET #y; True }}}.
 Proof.
   wp_start as "_".
-  wp_alloc_auto; wp_pures.
-  wp_alloc_auto; wp_pures.
+  wp_auto.
+
 ```
-
-:::: info Goal
-
-```txt
-  Φ : val → iPropI Σ
-  x_ptr, m_ptr : loc
-  ============================
-  _ : is_pkg_init concurrent
-  --------------------------------------□
-  "HΦ" : ∀ y : w64, True -∗ Φ (# y)
-  "x" : x_ptr ↦ default_val w64
-  "m" : m_ptr ↦ default_val Mutex.t
-  --------------------------------------∗
-  WP exception_do
-       ((do: Fork
-               (#
-                  {|
-                    func.f := <>;
-                    func.x := <>;
-                    func.e :=
-                      exception_do
-                        ((do: method_call (# (ptrT.id sync.Mutex.id))
-                                (# "Lock"%go) (# m_ptr)
-                                (# ())) ;;;
-                         let: "$r0" := # (W64 1) in
-                         (do: # x_ptr <-[# uint64T] "$r0") ;;;
-                         (do: method_call (# (ptrT.id sync.Mutex.id))
-                                (# "Unlock"%go) (# m_ptr)
-                                (# ())) ;;;
-                         return: # ())
-                  |} (# ()))) ;;;
-        (do: method_call (# (ptrT.id sync.Mutex.id))
-               (# "Lock"%go) (# m_ptr) (# ())) ;;;
-        let: "y" := alloc (type.zero_val (# uint64T)) in
-        let: "$r0" := ![# uint64T] (# x_ptr) in
-        (do: "y" <-[# uint64T] "$r0") ;;;
-        (do: method_call (# (ptrT.id sync.Mutex.id))
-               (# "Unlock"%go) (# m_ptr) (# ())) ;;;
-        return: ![# uint64T] "y")
-  {{ v, Φ v }}
-```
-
-::::
 
 Note that the automation has allocated a local variable for the mutex - we have `"m" : m_ptr ↦ default_val Mutex.t`.
 
@@ -313,7 +273,7 @@ To make this a usable lock, we use a _ghost update_ with the `iMod` tactic. The 
 ```txt
 init_Mutex
      : ∀ (R : iPropI Σ) (E : coPset) (m : loc),
-         m ↦ default_val Mutex.t -∗ ▷ R ={E}=∗ is_Mutex m R
+         m ↦ zero_val sync.Mutex.t -∗ ▷ R ={E}=∗ is_Mutex m R
 ```
 
 ::::
@@ -334,6 +294,7 @@ This is not far off from what the proof is actually doing - the only difference 
 :::: info Goal
 
 ```txt
+  package_sem : concurrent.Assumptions
   Φ : val → iPropI Σ
   x_ptr, m_ptr : loc
   ============================
@@ -344,12 +305,12 @@ This is not far off from what the proof is actually doing - the only difference 
   "Hinv" : ∃ y : w64, x_ptr ↦ y
   --------------------------------------∗
   WP exception_do
-       ((do: # ()) ;;;
+       ((do: # ()%V) ;;;
         let: "$r0" := # (W64 1) in
-        (do: # x_ptr <-[# uint64T] "$r0") ;;;
-        (do: method_call (# (ptrT.id sync.Mutex.id))
-               (# "Unlock"%go) (# m_ptr) (# ())) ;;;
-        return: # ())
+        (do: # x_ptr <-[go.uint64] "$r0") ;;;
+        (do: MethodResolve (go.PointerType sync.Mutex) "Unlock"
+               (# m_ptr) (# ()%V)) ;;;
+        return: # ()%V)
   {{ _, True }}
 ```
 
@@ -374,6 +335,7 @@ To call Unlock, we need to prove the same lock invariant.
 :::: info Goal
 
 ```txt
+  package_sem : concurrent.Assumptions
   Φ : val → iPropI Σ
   x_ptr, m_ptr : loc
   y : w64
@@ -403,8 +365,7 @@ Lemma wp_FirstLock_v2 :
   {{{ (y: w64), RET #y; ⌜uint.Z y = 0 ∨ uint.Z y = 1⌝ }}}.
 Proof.
   wp_start as "_".
-  wp_alloc_auto; wp_pures.
-  wp_alloc_auto; wp_pures.
+  wp_auto.
   iMod (init_Mutex (∃ (y: w64),
                   "x" :: x_ptr ↦ y ∗
                   "%Hx" :: ⌜uint.Z y = 0 ∨ uint.Z y = 1⌝)%I

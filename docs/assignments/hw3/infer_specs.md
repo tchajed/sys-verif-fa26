@@ -15,15 +15,18 @@ From sys_verif Require Import prelude empty_ffi.
 From sys_verif.program_proof Require Import heap_init.
 
 Section goose.
-Context `{!heapGS Σ} `{!globalsGS Σ} {go_ctx: GoContext}.
+Context `{hG: !heapGS Σ}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 (* worked example of a general specification *)
 Lemma wp_ExampleA (x_l y_l: loc) (z: w64) (x: bool) (y: w64) q :
-  {{{ is_pkg_init heap.heap ∗
+  {{{ is_pkg_init heap ∗
       "x" :: x_l ↦{q} x ∗ "y" :: y_l ↦ y }}}
-    @! heap.heap.ExampleA #x_l #y_l #z
+    @! heap.ExampleA #x_l #y_l #z
   {{{ RET #(); x_l ↦{q} x ∗
-               y_l ↦ (if x then z else 0) }}}.
+               y_l ↦ (if x then z else W64 0) }}}.
 Proof.
   wp_start as "H". iNamed "H".
 Admitted.

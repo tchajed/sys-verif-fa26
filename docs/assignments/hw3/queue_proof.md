@@ -20,7 +20,10 @@ From sys_verif.program_proof Require Import demos.stack_proof.
 From sys_verif.program_proof Require Import heap_init.
 
 Section proof.
-Context `{hG: !heapGS Σ} `{!globalsGS Σ} {go_ctx: GoContext}.
+Context `{hG: !heapGS Σ}.
+Context {sem : go.Semantics} {package_sem : heap.Assumptions}.
+Collection W := sem + package_sem.
+Set Default Proof Using "W".
 
 Definition queue_rep (v: heap.Queue.t) (els: list w64): iProp Σ :=
   False.
