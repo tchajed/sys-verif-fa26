@@ -6,15 +6,15 @@ toc: false
 date: 2026-03-11 08:00:00 -5
 ---
 
-This is a graduate-level class on _systems verification_: how to mathematically prove the correctness of programs with machine-checked proofs. A core technique throughout the class is _separation logic_, which we will use to reason about real-world programs written in Go, including using loop invariants, reasoning about slices, pointer-based data structures, and concurrency. Programming assignments will involve proving theorems with the Rocq prover.
-
-::: warn Website subject to change
+::: warning Website subject to change
 
 This website was copied from the 2025 iteration of the class and is still under construction. The lectures and especially assignments are still subject to change.
 
 :::
 
-::: info Course info
+This is a graduate-level class on _systems verification_: how to mathematically prove the correctness of programs with machine-checked proofs. A core technique throughout the class is _separation logic_, which we will use to reason about real-world programs written in Go, including using loop invariants, reasoning about slices, pointer-based data structures, and concurrency. Programming assignments will involve proving theorems with the Rocq prover.
+
+::: info Course info for Fall 2026
 
 **Instructor**: Tej Chajed &lsaquo;<chajed@wisc.edu>&rsaquo;
 
