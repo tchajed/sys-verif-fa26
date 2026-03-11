@@ -8,7 +8,7 @@ pageInfo: ["Date", "Category", "Tag", "Word"]
 
 # Introduction to Rocq
 
-> Follow these notes in Rocq at [src/sys_verif/notes/rocq_intro.v](https://github.com/tchajed/sys-verif-fa25-proofs/blob/main/src/sys_verif/notes/rocq_intro.v).
+> Follow these notes in Rocq at [src/sys_verif/notes/rocq_intro.v](https://github.com/tchajed/sys-verif-fa26-proofs/blob/main/src/sys_verif/notes/rocq_intro.v).
 
 In this lecture, we'll introduce Rocq as a system, functional programming, and proving theorems about functional programs. This lecture is intended to follow Software Foundation's Basics chapter, so I recommend reading that first.
 

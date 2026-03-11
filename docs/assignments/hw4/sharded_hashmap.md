@@ -12,7 +12,7 @@ shortTitle: "Sharded hashmap"
 
 In this assignment, you'll finish the proof of a concurrent, sharded hash map. You'll only be doing proofs: all theorem statements and invariants are provided.
 
-You should start by reading and understanding the [code](https://github.com/tchajed/sys-verif-fa25-proofs/blob/main/go/sharded_hashmap/sharded_hashmap.go). Really! Go read it! And spend some time figure out why you think it works and how you would explain its correctness without any of the tools in this proof. **Exercise:** Write this down in a Rocq comment in your solution. _(10 points)_
+You should start by reading and understanding the [code](https://github.com/tchajed/sys-verif-fa26-proofs/blob/main/go/sharded_hashmap/sharded_hashmap.go). Really! Go read it! And spend some time figure out why you think it works and how you would explain its correctness without any of the tools in this proof. **Exercise:** Write this down in a Rocq comment in your solution. _(10 points)_
 
 I suggest you do a quick skim over everything to understand the ideas and intuition, especially compared to just blindly trying to fill in proofs. The sub-sections should also be fairly independent so feel free to skip around to avoid getting stuck for too long on one part; it's better you attempt every part than finish some proofs and never start the others.
 

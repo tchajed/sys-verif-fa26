@@ -9,7 +9,7 @@ pageInfo: ["Date", "Category", "Tag", "Word"]
 
 # Loop invariants
 
-> Follow these notes in Rocq at [src/sys_verif/notes/loop_invariants.v](https://github.com/tchajed/sys-verif-fa25-proofs/blob/main/src/sys_verif/notes/loop_invariants.v).
+> Follow these notes in Rocq at [src/sys_verif/notes/loop_invariants.v](https://github.com/tchajed/sys-verif-fa26-proofs/blob/main/src/sys_verif/notes/loop_invariants.v).
 
 ## Learning outcomes
 

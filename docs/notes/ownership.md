@@ -9,7 +9,7 @@ pageInfo: ["Date", "Category", "Tag", "Word"]
 
 # Ownership reasoning with Goose
 
-> Follow these notes in Rocq at [src/sys_verif/notes/ownership.v](https://github.com/tchajed/sys-verif-fa25-proofs/blob/main/src/sys_verif/notes/ownership.v).
+> Follow these notes in Rocq at [src/sys_verif/notes/ownership.v](https://github.com/tchajed/sys-verif-fa26-proofs/blob/main/src/sys_verif/notes/ownership.v).
 
 ## Learning outcomes
 
@@ -393,7 +393,7 @@ Qed.
 
 Fill in a specification for each function, then do the proof. Proofs should mostly be automated (using tactics like `wp_start`, `wp_auto`, and `wp_end`) if you have a correct specification.
 
-You'll need to reference the implementation of these functions and methods in [go/heap/struct.go](https://github.com/tchajed/sys-verif-fa25-proofs/blob/main/go/heap/struct.go).
+You'll need to reference the implementation of these functions and methods in [go/heap/struct.go](https://github.com/tchajed/sys-verif-fa26-proofs/blob/main/go/heap/struct.go).
 
 ```rocq
 Lemma wp_Rect__Area (r_ptr0: loc) :
