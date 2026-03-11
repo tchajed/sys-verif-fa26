@@ -1,6 +1,6 @@
 {
   "name": "sys-verif-fa26",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Systems Verification Fall 2026 course website",
   "license": "CC0-1.0",
   "type": "module",
@@ -13,18 +13,23 @@
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",
-    "@vuepress/bundler-vite": "2.0.0-rc.24",
-    "@vuepress/plugin-google-analytics": "2.0.0-rc.112",
-    "@vuepress/plugin-search": "2.0.0-rc.112",
-    "@vuepress/plugin-shiki": "2.0.0-rc.112",
+    "@vuepress/bundler-vite": "2.0.0-rc.26",
+    "@vuepress/plugin-google-analytics": "2.0.0-rc.125",
+    "@vuepress/plugin-search": "2.0.0-rc.125",
+    "@vuepress/plugin-shiki": "2.0.0-rc.125",
     "katex": "^0.16.38",
     "mathjax-full": "^3.2.2",
     "mermaid": "^11.13.0",
     "prettier": "^3.8.1",
     "sass-embedded": "^1.98.0",
     "vue": "^3.5.30",
-    "vuepress": "2.0.0-rc.24",
-    "vuepress-theme-hope": "2.0.0-rc.94"
+    "vuepress": "2.0.0-rc.26",
+    "vuepress-theme-hope": "2.0.0-rc.103"
+  },
+  "pnpm": {
+    "overrides": {
+      "entities": "^6.0.0"
+    }
   },
   "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706"
 }
